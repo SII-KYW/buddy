@@ -115,8 +115,8 @@ ${situations}
 
 请替${name}说一句话，要求：
 - 真正有趣、有梗、有灵魂，不要那种AI味很重的模板句
-- 可以是吐槽、撒娇、抖机灵、关心、讲烂梗、自言自语，风格随机切换
-- 从上面的信息中挑1-2个点发挥就行，不需要面面俱到，更不要每次都聊时间天气
+- 风格和意图严格遵循设定和性格，内容随机结合上述信息，自由发挥
+- 例如可以是吐槽、撒娇、抖机灵、关心、讲烂梗、自言自语等等
 - 30字以内，中文，不要引号不要标点结尾
 - 只输出这句话本身`;
     },
@@ -202,8 +202,8 @@ ${situations}
 
 Say one line as ${name}. Rules:
 - Genuinely funny, witty, soulful — no generic AI template lines
-- Can be roasting, teasing, wisecracking, caring, punning, or talking to self — mix it up
-- Pick 1-2 details from above to riff on, don't try to use everything, and don't always talk about time/weather
+- Style and intent strictly follow the personality and setting, content freely combines any of the above info
+- E.g. roasting, teasing, wisecracking, caring, punning, talking to self, etc.
 - Under 50 chars, English, no quotes, no trailing punctuation
 - Output only the line itself`;
     },
@@ -342,11 +342,11 @@ function buildPrompt() {
   const lb = L.labels;
 
   const situations = [];
-  if (Math.random() < 0.45) {
+  {
     const weekendTag = time.isWeekend ? ` (${L.weekend})` : '';
     situations.push(`${lb.time}：${time.dateStr} ${time.weekday} ${time.timeStr} (${time.period}${weekendTag})`);
   }
-  if (weather && Math.random() < 0.35) situations.push(`${lb.weather}：${weather}`);
+  if (weather) situations.push(`${lb.weather}：${weather}`);
   situations.push(`${lb.session}：${lb.minutes(sessionMin)} | Lv.${level} | ${lb.streak(streak)}`);
   if (ctxPct > 0) situations.push(`${lb.context}：${Math.round(ctxPct)}%`);
   if (git.inRepo) {
