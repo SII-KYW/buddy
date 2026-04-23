@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Buddy Statusline v3 — Coding Health + GLM Quota
+ * Buddy Statusline v3 — Coding Health + Provider-Agnostic LLM
  *
  * Pet stats AUTO-UPDATE from:
  *   stdin (context window) + git status + quota API
@@ -25,7 +25,14 @@ const authToken = process.env.ANTHROPIC_AUTH_TOKEN || '';
 const modelEnv  = process.env.ANTHROPIC_MODEL || 'GLM';
 
 let baseDomain;
-if (baseUrl) { try { baseDomain = new URL(baseUrl).origin; } catch {} }
+let messagesUrl;
+if (baseUrl) {
+  try {
+    baseDomain = new URL(baseUrl).origin;
+    messagesUrl = new URL(baseUrl.replace(/\/+$/, '') + '/v1/messages');
+  } catch {}
+}
+const isGLM = messagesUrl?.hostname?.includes('bigmodel');
 
 const c = {
   g: s => `\x1b[32m${s}\x1b[0m`, y: s => `\x1b[33m${s}\x1b[0m`,
@@ -89,17 +96,16 @@ function getGitInfo() {
 const LORE_LOCK = path.join(HOME, '.claude/buddy/lore.lock');
 
 function callGLMAPI(prompt, callback) {
-  if (!authToken || !baseDomain) return callback('');
+  if (!authToken || !messagesUrl) return callback('');
   const body = JSON.stringify({
-    model: 'glm-5.1',
+    model: modelEnv,
     messages: [{ role: 'user', content: prompt }],
     max_tokens: 1000,
     temperature: 0.8,
   });
-  const url = new URL(baseDomain);
   const req = https.request({
-    hostname: url.hostname, port: 443,
-    path: '/api/anthropic/v1/messages', method: 'POST',
+    hostname: messagesUrl.hostname, port: messagesUrl.port || 443,
+    path: messagesUrl.pathname, method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-api-key': authToken,
@@ -313,6 +319,7 @@ function writeCache(data) { try { fs.writeFileSync(CACHE_FILE, JSON.stringify(da
 
 function fetchQuota() {
   return new Promise((resolve, reject) => {
+    if (!isGLM) return reject(new Error('quota: non-GLM provider'));
     const url = new URL(`${baseDomain}/api/monitor/usage/quota/limit`);
     const req = https.request({
       hostname: url.hostname, port: 443, path: url.pathname, method: 'GET',
@@ -359,19 +366,18 @@ function refreshQuip() {
     const promptFile = path.join(HOME, '.claude', 'buddy', 'quip-prompt.txt');
     let prompt;
     try { prompt = fs.readFileSync(promptFile, 'utf8').trim(); } catch { return resolve(); }
-    if (!prompt || !authToken || !baseDomain) return resolve();
+    if (!prompt || !authToken || !messagesUrl) return resolve();
 
     const body = JSON.stringify({
-      model: 'glm-5.1',
+      model: modelEnv,
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 200,
       temperature: 0.8,
     });
 
-    const url = new URL(baseDomain);
     const req = https.request({
-      hostname: url.hostname, port: 443,
-      path: '/api/anthropic/v1/messages', method: 'POST',
+      hostname: messagesUrl.hostname, port: messagesUrl.port || 443,
+      path: messagesUrl.pathname, method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': authToken,

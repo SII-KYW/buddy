@@ -13,7 +13,7 @@ LOCK_FILE="$HOME/.claude/buddy/lore.lock"
 PROMPT=$(cat "$PROMPT_FILE")
 [ -z "$PROMPT" ] && exit 0
 
-OUTPUT=$(claude -p "$PROMPT" --model glm-5.1 --output-format text --no-session-persistence 2>/dev/null)
+OUTPUT=$(claude -p "$PROMPT" --output-format text --no-session-persistence 2>/dev/null)
 [ -z "$OUTPUT" ] && exit 0
 
 # Write raw output to temp file for node to parse

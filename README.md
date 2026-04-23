@@ -67,7 +67,7 @@ Your pet levels up from real coding activity:
 
 ## AI Quips
 
-Your pet generates witty one-liners using `claude -p` (runs your configured model). It knows about:
+Your pet generates witty one-liners via direct API calls (Anthropic Messages compatible — works with any provider). It knows about:
 
 - **Time** — late night? weekend? different vibes
 - **Weather** — via `wttr.in`
@@ -86,7 +86,7 @@ Examples:
 statusline.mjs          Entry point — called by Claude Code periodically
 ├── pet-engine.mjs      Core engine — species, stats, ASCII art, personalities
 ├── quip.mjs            Prompt builder — gathers context, writes prompt file
-├── quip-gen.sh         Calls `claude -p` to generate quip (background, non-blocking)
+├── llm.mjs             Direct Anthropic Messages API calls (provider-agnostic)
 ├── tick.mjs            Lightweight tick for loop agents
 └── view.mjs            Standalone TUI dashboard (run in a separate terminal)
 
@@ -165,7 +165,11 @@ Keys: `[p]` pet `[r]` refresh `[h]` hatch new `[q]` quit
 
 - Claude Code CLI
 - Node.js 18+
-- (Optional) GLM/ZHIPU Coding Plan for quota display
+- Any LLM provider with Anthropic Messages API compatibility (GLM, OpenRouter, Anthropic, etc.)
+
+## Acknowledgments
+
+Inspired by [glm-cc-bar](https://github.com/ziHoHe/glm-cc-bar) — GLM quota monitor for Claude Code.
 
 ## License
 
