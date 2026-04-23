@@ -415,7 +415,7 @@ function refreshQuip() {
           const json = JSON.parse(data);
           let q = (json.content?.[0]?.text || '').trim();
           q = q.replace(/^["'""'']+/, '').replace(/["'""'']+$/, '').replace(/[。！？.!?]+$/, '').trim();
-          if (q.length > 40) q = q.slice(0, 40);
+          if (q.length > 50) { const last = q.lastIndexOf(' ', 50); q = q.slice(0, last > 0 ? last : 50).trim(); }
           if (q) fs.writeFileSync(QUIP_FILE, q);
         } catch {}
         resolve();
