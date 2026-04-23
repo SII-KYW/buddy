@@ -283,17 +283,6 @@ function getSessionRecap() {
       try {
         const lines = fs.readFileSync(t.path, 'utf8').split('\n').filter(Boolean);
 
-        const summaries = [];
-        for (const line of lines) {
-          try {
-            const d = JSON.parse(line);
-            if (d.type === 'system' && d.subtype === 'away_summary' && d.content) {
-              summaries.push(d.content.replace(/ \(disable recaps in \/config\)/g, '').trim());
-            }
-          } catch {}
-        }
-        if (summaries.length > 0) return summaries[summaries.length - 1];
-
         const userTasks = [];
         for (const line of lines) {
           try {
