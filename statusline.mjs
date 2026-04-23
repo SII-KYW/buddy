@@ -85,14 +85,60 @@ function getGitInfo() {
   return r;
 }
 
+// ---- Lore (background + personality) triggers ----
+const LORE_LOCK = path.join(HOME, '.claude/buddy/lore.lock');
+
+function triggerLoreEvolution(state) {
+  try {
+    const st = fs.statSync(LORE_LOCK);
+    if (Date.now() - st.mtimeMs < 60000) return;
+  } catch {}
+  try { fs.writeFileSync(LORE_LOCK, String(Date.now())); } catch {}
+  const SPECIES_CN = {cat:'猫',dog:'狗',rabbit:'兔子',hamster:'仓鼠',bird:'鸟',fish:'鱼',turtle:'乌龟',snake:'蛇',frog:'青蛙',bear:'熊',fox:'狐狸',penguin:'企鹅',owl:'猫头鹰',dragon:'龙',ghost:'幽灵',robot:'机器人',alien:'外星人',star:'星星'};
+  const PERSONALITY_CN = {lazy:'懒洋洋',energetic:'元气满满',shy:'社恐',mischievous:'调皮捣蛋',brave:'勇猛',curious:'好奇宝宝',proud:'傲娇',gentle:'温柔',grumpy:'暴躁',clumsy:'冒失鬼',wise:'老成',chaotic:'混沌邪恶'};
+  const sp = SPECIES_CN[state.species] || state.species;
+  const ps = PERSONALITY_CN[state.personality] || state.personality;
+  const prompt = `你是一个创意作家。一只住在终端里的电子${sp}升级到了Lv.${state.level}。\n\n当前性格描写：${state.personalityDetail || '刚出生'}\n性格关键词：${ps}\n\n请在保持核心性格不变的前提下，微调性格描写，体现成长（更成熟/更有趣/新习惯）。\n\n只输出更新后的性格描写（200字以内），不要其他内容。`;
+  const promptFile = path.join(HOME, '.claude/buddy/lore-prompt.txt');
+  fs.writeFileSync(promptFile, prompt);
+  try {
+    const child = spawn('bash', [path.join(HOME, '.claude/scripts/buddy/lore-gen.sh')], {
+      detached: true, stdio: 'ignore',
+    });
+    child.unref();
+  } catch {}
+}
+
+function triggerLoreMissing(state) {
+  try {
+    const st = fs.statSync(LORE_LOCK);
+    if (Date.now() - st.mtimeMs < 60000) return;
+  } catch {}
+  try { fs.writeFileSync(LORE_LOCK, String(Date.now())); } catch {}
+  const SPECIES_CN = {cat:'猫',dog:'狗',rabbit:'兔子',hamster:'仓鼠',bird:'鸟',fish:'鱼',turtle:'乌龟',snake:'蛇',frog:'青蛙',bear:'熊',fox:'狐狸',penguin:'企鹅',owl:'猫头鹰',dragon:'龙',ghost:'幽灵',robot:'机器人',alien:'外星人',star:'星星'};
+  const PERSONALITY_CN = {lazy:'懒洋洋',energetic:'元气满满',shy:'社恐',mischievous:'调皮捣蛋',brave:'勇猛',curious:'好奇宝宝',proud:'傲娇',gentle:'温柔',grumpy:'暴躁',clumsy:'冒失鬼',wise:'老成',chaotic:'混沌邪恶'};
+  const sp = SPECIES_CN[state.species] || state.species;
+  const ps = PERSONALITY_CN[state.personality] || state.personality;
+  const prompt = `你是一个创意作家。为一只住在程序员终端里的电子宠物生成设定。\n\n宠物信息：\n- 名字：${state.name}\n- 物种：${sp}\n- 性格关键词：${ps}${state.shiny ? '\n- 特殊：✨闪光变种（稀有）' : ''}\n\n请生成以下内容，用 === 分隔两部分：\n\n第一部分（背景故事，200字以内）：写一段有趣的背景故事，描述这只${sp}是怎么来到程序员的终端里的。\n\n第二部分（性格描写，200字以内）：基于"${ps}"这个性格关键词，描写它的具体行为习惯、说话方式、小动作。\n\n只输出这两部分，用 === 分隔，不要其他内容。`;
+  const promptFile = path.join(HOME, '.claude/buddy/lore-prompt.txt');
+  fs.writeFileSync(promptFile, prompt);
+  try {
+    const child = spawn('bash', [path.join(HOME, '.claude/scripts/buddy/lore-gen.sh')], {
+      detached: true, stdio: 'ignore',
+    });
+    child.unref();
+  } catch {}
+}
+
 // ---- Pet Status (auto-computed) ----
 function gainXP(state, amount) {
   state.xp = (state.xp || 0) + amount;
-  const needed = (state.level || 1) * 25;
+  const oldLevel = state.level || 1;
   while (state.xp >= (state.level || 1) * 25) {
     state.xp -= (state.level || 1) * 25;
     state.level = (state.level || 1) + 1;
   }
+  state._leveledUp = (state.level || 1) > oldLevel;
 }
 
 function petStatus(ctxPct) {
@@ -164,6 +210,16 @@ function petStatus(ctxPct) {
     }
 
     if (needsSave) fs.writeFileSync(BUDDY_STATE, JSON.stringify(state, null, 2));
+
+    // Level-up personality evolution (background, non-blocking)
+    if (state._leveledUp && state.personalityDetail) {
+      triggerLoreEvolution(state);
+    }
+    // Missing background — trigger lore generation
+    if (!state.background) {
+      triggerLoreMissing(state);
+    }
+    delete state._leveledUp;
 
     // Auto-compute stats
     const hunger = Math.round(Math.max(5, 100 - ctxPct * 1.15));

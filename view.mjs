@@ -13,7 +13,7 @@
  */
 
 import {
-  loadState, saveState, hatch, hatched, getGitInfo,
+  loadState, saveState, hatch, hatched, getGitInfo, reset,
   computeStats, getMood, getMoodLabel, getStatusEffects,
   getSpeciesDef, getArt, formatAge, formatSessionTime,
   getContextualThought, getXpProgress, getLevelTitle, xpForLevel,
@@ -61,6 +61,15 @@ function xpBar(current, needed, width = 16) {
   const pct = Math.min(1, current / needed);
   const filled = Math.round(pct * width);
   return c('cyan', '▓'.repeat(filled) + '░'.repeat(width - filled));
+}
+
+function wrapText(text, maxWidth) {
+  const chars = [...text];
+  const lines = [];
+  for (let i = 0; i < chars.length; i += maxWidth) {
+    lines.push(chars.slice(i, i + maxWidth).join(''));
+  }
+  return lines;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -138,6 +147,22 @@ function render(state, ctxPct, gitInfo) {
 
   rows.push(empty());
 
+  // Background story + personality detail
+  if (state.background) {
+    const bgLines = wrapText(state.background, W - 4);
+    rows.push(line(c('dim', ` 📖 ${bgLines[0]}`)));
+    for (let i = 1; i < bgLines.length && i < 3; i++) {
+      rows.push(line(c('dim', `    ${bgLines[i]}`)));
+    }
+  }
+  if (state.personalityDetail) {
+    const pdLines = wrapText(state.personalityDetail, W - 4);
+    rows.push(line(c('dim', ` 🎭 ${pdLines[0]}`)));
+    for (let i = 1; i < pdLines.length && i < 2; i++) {
+      rows.push(line(c('dim', `    ${pdLines[i]}`)));
+    }
+  }
+
   // Thought bubble
   rows.push(line(c('dim', ` 💭 ${state.name} ${thought}`)));
 
@@ -156,7 +181,7 @@ function render(state, ctxPct, gitInfo) {
 
   // Footer
   rows.push(line(c('dim', ` Commits: ${state.totalCommits || 0}  Pushes: ${state.totalPushes || 0}  Files: ${state.filesTouched || 0}`)));
-  rows.push(line(c('dim', ' [p]pet [r]efresh [h]atch [q]uit')));
+  rows.push(line(c('dim', ' [p]pet [r]efresh [h]atch [x]reset [q]uit')));
 
   rows.push('╚' + '═'.repeat(W - 2) + '╝');
 
@@ -181,6 +206,7 @@ function clearAndDraw(rows) {
 
 let lastCommitHash = '';
 let lastAheadCount = -1;
+let resetConfirm = false;
 
 function update() {
   const state = loadState();
@@ -249,8 +275,25 @@ process.stdin.on('data', (key) => {
     const species = getSpeciesDef(state.species);
     lastCommitHash = '';
     lastAheadCount = -1;
+    resetConfirm = false;
     addEvent(c('magenta', `Hatched ${state.name} the ${species.label}!${state.shiny ? ' SHINY!' : ''}`));
+    addEvent(c('dim', 'Background story generating...'));
     update();
+  }
+
+  if (key === 'x') {
+    if (!resetConfirm) {
+      resetConfirm = true;
+      addEvent(c('yellow', 'Press [x] again to confirm reset'));
+      update();
+    } else {
+      reset();
+      resetConfirm = false;
+      lastCommitHash = '';
+      lastAheadCount = -1;
+      addEvent(c('red', 'Pet reset. Press [h] to hatch a new one.'));
+      update();
+    }
   }
 });
 

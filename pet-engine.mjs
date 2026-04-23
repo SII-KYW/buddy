@@ -14,7 +14,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 
 const HOME = os.homedir();
 const STATE_DIR = path.join(HOME, '.claude', 'buddy');
@@ -151,9 +151,101 @@ export function hatch() {
     lastCommitHash: '',
     lastCommitTime: 0,
     lastCareDate: new Date().toISOString().slice(0, 10),
+    background: '',
+    personalityDetail: '',
   };
   saveState(state);
+  triggerLoreGen(state);
   return state;
+}
+
+export function reset() {
+  const files = [STATE_FILE, path.join(STATE_DIR, 'quip.txt'), path.join(STATE_DIR, 'quip-prompt.txt'),
+    path.join(STATE_DIR, 'git-cache.json'), path.join(STATE_DIR, 'lore-prompt.txt'), path.join(STATE_DIR, 'lore.lock')];
+  for (const f of files) { try { fs.unlinkSync(f); } catch {} }
+  return true;
+}
+
+export function needsLoreGen(state) {
+  return state && !state.background;
+}
+
+function triggerLoreGen(state) {
+  const SPECIES_CN = {
+    cat:'猫',dog:'狗',rabbit:'兔子',hamster:'仓鼠',bird:'鸟',fish:'鱼',
+    turtle:'乌龟',snake:'蛇',frog:'青蛙',bear:'熊',fox:'狐狸',penguin:'企鹅',
+    owl:'猫头鹰',dragon:'龙',ghost:'幽灵',robot:'机器人',alien:'外星人',star:'星星',
+  };
+  const PERSONALITY_CN = {
+    lazy:'懒洋洋',energetic:'元气满满',shy:'社恐',mischievous:'调皮捣蛋',
+    brave:'勇猛',curious:'好奇宝宝',proud:'傲娇',gentle:'温柔',
+    grumpy:'暴躁',clumsy:'冒失鬼',wise:'老成',chaotic:'混沌邪恶',
+  };
+  const sp = SPECIES_CN[state.species] || state.species;
+  const ps = PERSONALITY_CN[state.personality] || state.personality;
+  const prompt = `你是一个创意作家。为一只住在程序员终端里的电子宠物生成设定。
+
+宠物信息：
+- 名字：${state.name}
+- 物种：${sp}
+- 性格关键词：${ps}${state.shiny ? '\n- 特殊：✨闪光变种（稀有）' : ''}
+
+请生成以下内容，用 === 分隔两部分：
+
+第一部分（背景故事，200字以内）：
+写一段有趣的背景故事，描述这只${sp}是怎么来到程序员的终端里的。要有创意，可以融入编程/科技梗。
+
+第二部分（性格描写，200字以内）：
+基于"${ps}"这个性格关键词，用生动的语言描写它的具体行为习惯、说话方式、小动作。要像描写一个真实的角色。
+
+只输出这两部分，用 === 分隔，不要其他内容。`;
+
+  const promptFile = path.join(STATE_DIR, 'lore-prompt.txt');
+  fs.writeFileSync(promptFile, prompt);
+  // Background spawn
+  try {
+    const child = spawn('bash', [path.join(STATE_DIR, '..', 'scripts', 'buddy', 'lore-gen.sh')], {
+      detached: true, stdio: 'ignore', env: { ...process.env, STATE_FILE },
+    });
+    child.unref();
+  } catch {}
+}
+
+export function triggerPersonalityEvolution(state) {
+  const SPECIES_CN = {
+    cat:'猫',dog:'狗',rabbit:'兔子',hamster:'仓鼠',bird:'鸟',fish:'鱼',
+    turtle:'乌龟',snake:'蛇',frog:'青蛙',bear:'熊',fox:'狐狸',penguin:'企鹅',
+    owl:'猫头鹰',dragon:'龙',ghost:'幽灵',robot:'机器人',alien:'外星人',star:'星星',
+  };
+  const PERSONALITY_CN = {
+    lazy:'懒洋洋',energetic:'元气满满',shy:'社恐',mischievous:'调皮捣蛋',
+    brave:'勇猛',curious:'好奇宝宝',proud:'傲娇',gentle:'温柔',
+    grumpy:'暴躁',clumsy:'冒失鬼',wise:'老成',chaotic:'混沌邪恶',
+  };
+  const sp = SPECIES_CN[state.species] || state.species;
+  const ps = PERSONALITY_CN[state.personality] || state.personality;
+  const oldDetail = state.personalityDetail || '刚出生的小家伙';
+
+  const prompt = `你是一个创意作家。一只住在终端里的电子${sp}要升级了。
+
+当前信息：
+- 名字：${state.name}
+- 性格关键词：${ps}
+- 当前性格描写：${oldDetail}
+- 即将升到 Lv.${state.level}
+
+随着等级提升，它的性格会微妙地成长和变化。请在保持核心性格不变的前提下，微调它的性格描写，体现出成长（比如变得更成熟、更有趣、或者有了新的小习惯）。
+
+只输出更新后的性格描写（200字以内），不要其他内容。`;
+
+  const promptFile = path.join(STATE_DIR, 'lore-prompt.txt');
+  fs.writeFileSync(promptFile, prompt);
+  try {
+    const child = spawn('bash', [path.join(STATE_DIR, '..', 'scripts', 'buddy', 'lore-gen.sh')], {
+      detached: true, stdio: 'ignore', env: { ...process.env, STATE_FILE },
+    });
+    child.unref();
+  } catch {}
 }
 
 // ═══════════════════════════════════════════════════════════════════

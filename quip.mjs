@@ -208,7 +208,45 @@ function buildPrompt() {
   };
   const voice = voiceMap[state.personality] || '说话随性自然';
 
-  const prompt = `${name}是一只${personality}的${species}，住在程序员的终端状态栏里。${voice}。
+  // Lore context
+  const loreParts = [];
+  if (state.background) loreParts.push(`背景：${state.background}`);
+  if (state.personalityDetail) loreParts.push(`性格细节：${state.personalityDetail}`);
+  const loreText = loreParts.length > 0 ? '\n' + loreParts.join('\n') : '';
+
+  // 35% chance: inner monologue mode (first-person thought, not reactive)
+  const isInnerThought = Math.random() < 0.35;
+
+  let prompt;
+  if (isInnerThought && state.background) {
+    const thoughtTypes = [
+      '哼一首只有自己能听懂的奇怪小曲',
+      '突然想起过去的某个片段，发呆走神',
+      '小声嘟囔一个荒诞的欲望或想法',
+      '对着空荡荡的终端自言自语',
+      '突然冒出一段莫名其妙的感慨',
+      '回忆起自己来到终端之前的生活',
+      '偷偷许一个不可能实现的愿望',
+      '用只有自己能听到的声音吐槽什么',
+      '突然陷入某种奇怪的哲学思考',
+      '做一个和白日梦有关的碎碎念',
+    ];
+    const thought = thoughtTypes[Math.floor(Math.random() * thoughtTypes.length)];
+
+    prompt = `${name}是一只${personality}的${species}，住在程序员的终端状态栏里。${voice}。${loreText}
+
+此刻，${name}没有在看程序员，它沉浸在自己的世界里。它在${thought}。
+
+请以${name}的第一人称视角，写一句它的内心独白。
+要求：
+- 要有角色感和沉浸感，像是一个真实的小生物在想东西
+- 可以是唱歌、碎碎念、发呆、回忆、吐槽、许愿、感慨，风格随机
+- 要符合它的背景故事和性格，不要OOC
+- 不要提到程序员或当前工作状态，纯粹是它自己的内心世界
+- 30字以内，中文，不要引号不要标点结尾
+- 只输出这句话本身`;
+  } else {
+    prompt = `${name}是一只${personality}的${species}，住在程序员的终端状态栏里。${voice}。${loreText}
 
 它此刻观察到的信息：
 ${situationText}
@@ -219,6 +257,7 @@ ${situationText}
 - 必须结合上面的具体信息（时间/天气/git/最近在忙什么），不要泛泛而谈
 - 30字以内，中文，不要引号不要标点结尾
 - 只输出这句话本身`;
+  }
 
   return prompt;
 }
