@@ -136,6 +136,7 @@ function callGLMAPI(prompt, callback) {
       'anthropic-version': '2023-06-01',
     },
   }, res => {
+    res.setEncoding('utf8');
     let data = '';
     res.on('data', chunk => { data += chunk; });
     res.on('end', () => {
