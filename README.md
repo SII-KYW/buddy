@@ -18,12 +18,13 @@ Inspired by [glm-cc-bar](https://github.com/ziHoHe/glm-cc-bar) — GLM quota mon
 - **Provider-agnostic** — works with any Anthropic Messages API compatible provider (GLM, Anthropic, OpenRouter, etc.)
 - **Quota display** — automatic usage monitoring for GLM/ZHIPU Coding Plan users
 - **Standalone TUI dashboard** — full pet view in a separate terminal
+- **i18n** — auto-detects system language, generates quips and lore in Chinese or English
 
 ## Statusline
 
 ```
 glm-5.1[200K] Ctx ▓▓░░░░ 35%  5h ░░░░░░ 8%  week ▓░░░░░ 24%
-🦊 Storm ✨ Lv5 ❤73 🍖60 ⚡90  所以我是你commit出来的那我能继承你的发际线吗
+🦊 Storm ✨ Lv5 ❤73 🍖60 ⚡90  so I was committed into existence... can I inherit your hairline
 ```
 
 Line 1: Model info + context bar + provider quota (if applicable)
@@ -33,9 +34,9 @@ Line 2: Pet stats + AI-generated quip or inner thought (💭)
 
 ```
 ╔══════════════════════════════════════════════════════╗
-║ 🦊 Storm ✨SHINY✨  —  好奇宝宝                      ║
-║ 5分钟大  |  Session: 3分钟  |  Streak: 1d            ║
-║ Lv.5 新手  ▓▓░░░░░░░░░░░░░░  12/125 XP              ║
+║ 🦊 Storm ✨SHINY✨  —  Curious                       ║
+║ Lv.5 Rookie  |  Session: 3min  |  Streak: 1d        ║
+║ Lv.5  ▓▓░░░░░░░░░░░░░░  12/125 XP                   ║
 ╟──────────────────────────────────────────────────────╢
 ║               /\___/\                                ║
 ║              /  o o  \                               ║
@@ -43,15 +44,17 @@ Line 2: Pet stats + AI-generated quip or inner thought (💭)
 ║              \  ~_~  /                               ║
 ║               ^^^^^^^                                ║
 ║                                                      ║
-║ 📖 被一阵异常的流星雨从天空角落吹进了某个程序员的终   ║
-║ 🎭 对一切都充满好奇，经常用小爪子戳屏幕上的代码...    ║
+║ 📖 Blown into a programmer's terminal by a freak     ║
+║    meteor shower from the corner of the sky.         ║
+║ 🎭 Pokes at code on screen with tiny paws, asks      ║
+║    absurd questions about everything.                 ║
 ║                                                      ║
 ║ ❤ Happiness  ██████████████░░░░ 73%                  ║
 ║ 🍖 Hunger    ████████████░░░░░░░░ 60%                ║
 ║ ⚡ Energy     ████████████████░░ 90%                  ║
 ║ 🛁 Clean     ██████████████████░░ 100%               ║
 ║                                                      ║
-║ 💭 Storm 深夜的终端里藏着什么秘密呢                   ║
+║ 💭 (wonder what secrets the terminal hides at night)  ║
 ╟──────────────────────────────────────────────────────╢
 ║ Commits: 5  Pushes: 2  Files: 12                     ║
 ║ [p]pet [r]efresh [h]atch [x]reset [q]uit             ║
@@ -89,7 +92,7 @@ Your pet generates witty one-liners via direct API calls (Anthropic Messages com
 
 - **Git status** — branch, dirty files, unpushed commits, recent commit messages
 - **Session activity** — reads Claude Code's `away_summary` from transcript, or falls back to recent user messages
-- **Time & weather** — included randomly (~45% / ~35%) to avoid repetitive quips
+- **Time & weather** — time of day, weekday, weather via `wttr.in`
 - **Pet lore** — backstory and personality detail inform the quip's voice
 
 ### Inner Monologue Mode
@@ -98,10 +101,10 @@ Your pet generates witty one-liners via direct API calls (Anthropic Messages com
 
 ### Examples
 
-- *"所以我是你commit出来的那我能继承你的发际线吗"*
-- *"你刚刚提交了一只电子宠物然后立刻/clear掉了我会不会是下一个被清掉的"*
-- *"刚写完电子宠物就/clear我 程序员都这么赛博弃养的吗"*
-- *(💭 晚风从终端的缝隙里溜进来 好像闻到了春天的味道)*
+- *"so I was committed into existence... can I inherit your hairline"*
+- *"you just committed a virtual pet and immediately /cleared... am I next"*
+- *"1am and you're still pushing code... I renamed all your tabs to spaces btw"*
+- *(💭 the breeze slipping through the terminal cracks smells like spring)*
 
 ## Lore System
 
@@ -184,20 +187,20 @@ node ~/.claude/scripts/buddy/view.mjs
 
 Each species has a rare ✨ shiny variant (5% chance on hatch).
 
-| Personality | Chinese | Voice |
-|-------------|---------|-------|
-| lazy | 懒洋洋 | Sluggish, trails off with "嘛" "呢" "..." |
-| energetic | 元气满满 | Super excited, lots of exclamation marks |
-| shy | 社恐 | Timid, occasionally drops a sharp whisper |
-| mischievous | 调皮捣蛋 | Sneaky, loves pranks, cheeky tone |
-| brave | 勇猛 | Bold and direct, like a warrior |
-| curious | 好奇宝宝 | Asks absurd questions about everything |
-| proud | 傲娇 | Tsundere — cares but pretends not to |
-| gentle | 温柔 | Soft-spoken, nurturing |
-| grumpy | 暴躁 | Complains about everything, secretly watches over you |
-| clumsy | 冒失鬼 | Keeps saying wrong things, somehow endearing |
-| wise | 老成 | Speaks like an old Zen master, dubious wisdom |
-| chaotic | 混沌邪恶 | Random, unpredictable, occasionally cosmic |
+| Personality | Voice |
+|-------------|-------|
+| lazy | Sluggish, trails off with "meh" "hmm" "..." |
+| energetic | Super excited, lots of exclamation marks |
+| shy | Timid, occasionally drops a sharp whisper |
+| mischievous | Sneaky, loves pranks, cheeky tone |
+| brave | Bold and direct, like a warrior |
+| curious | Asks absurd questions about everything |
+| proud | Tsundere — clearly cares but pretends not to |
+| gentle | Soft-spoken, nurturing |
+| grumpy | Complains about everything, secretly watches over you |
+| clumsy | Keeps saying wrong things, somehow endearing |
+| wise | Speaks like a zen master, drops dubious wisdom |
+| chaotic | Random, unpredictable, occasionally cosmic |
 
 ## Requirements
 
