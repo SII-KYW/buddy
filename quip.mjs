@@ -167,10 +167,10 @@ function buildPrompt() {
   const level = state.level || 1;
   const streak = state.streak || 1;
 
-  // Build situational summary
+  // Build situational summary — time & weather included randomly to avoid repetitive quips
   const situations = [];
-  situations.push(`时间：${time.dateStr} 周${time.weekday} ${time.timeStr}（${time.period}${time.isWeekend ? '，周末' : ''}）`);
-  if (weather) situations.push(`天气：${weather}`);
+  if (Math.random() < 0.45) situations.push(`时间：${time.dateStr} 周${time.weekday} ${time.timeStr}（${time.period}${time.isWeekend ? '，周末' : ''}）`);
+  if (weather && Math.random() < 0.35) situations.push(`天气：${weather}`);
   situations.push(`会话：${sessionMin}分钟 | Lv.${level} | ${streak}天连续在线`);
   if (ctxPct > 0) situations.push(`上下文：${Math.round(ctxPct)}%`);
   if (git.inRepo) {
@@ -254,7 +254,7 @@ ${situationText}
 请替${name}说一句话，要求：
 - 真正有趣、有梗、有灵魂，不要那种AI味很重的模板句
 - 可以是吐槽、撒娇、抖机灵、关心、讲烂梗、自言自语，风格随机切换
-- 必须结合上面的具体信息（时间/天气/git/最近在忙什么），不要泛泛而谈
+- 从上面的信息中挑1-2个点发挥就行，不需要面面俱到，更不要每次都聊时间天气
 - 30字以内，中文，不要引号不要标点结尾
 - 只输出这句话本身`;
   }
