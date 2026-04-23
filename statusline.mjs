@@ -116,6 +116,40 @@ function getGitInfo() {
   return r;
 }
 
+// ---- Error detection (cached 20s) ----
+const ERROR_CACHE = path.join(HOME, '.claude', 'buddy', 'error-cache.json');
+
+function getErrorInfo() {
+  try {
+    const d = JSON.parse(fs.readFileSync(ERROR_CACHE, 'utf8'));
+    if (Date.now() - d.ts < 20_000) return d;
+  } catch {}
+  let recentErrors = 0;
+  try {
+    const projectDir = path.join(HOME, '.claude', 'projects');
+    if (!fs.existsSync(projectDir)) throw 0;
+    const transcripts = [];
+    function scanDir(dir) {
+      try { for (const f of fs.readdirSync(dir)) {
+        const fp = path.join(dir, f); const st = fs.statSync(fp);
+        if (st.isDirectory()) scanDir(fp);
+        else if (f.endsWith('.jsonl')) transcripts.push({ path: fp, mtime: st.mtimeMs });
+      }} catch {}
+    }
+    scanDir(projectDir);
+    transcripts.sort((a, b) => b.mtimeMs - a.mtimeMs);
+    if (transcripts.length === 0) throw 0;
+    const lines = fs.readFileSync(transcripts[0].path, 'utf8').split('\n').filter(Boolean);
+    const tail = lines.slice(-80);
+    for (const line of tail) {
+      if (line.includes('"is_error":true') || line.includes('"is_error": true')) recentErrors++;
+    }
+  } catch {}
+  const r = { ts: Date.now(), recentErrors };
+  try { fs.writeFileSync(ERROR_CACHE, JSON.stringify(r)); } catch {}
+  return r;
+}
+
 // ---- Lore (background + personality) via direct API ----
 const LORE_LOCK = path.join(HOME, '.claude/buddy/lore.lock');
 
@@ -301,7 +335,11 @@ function petStatus(ctxPct) {
     const hunger = Math.round(Math.max(5, 100 - ctxPct * 1.15));
     const sessionMin = (now - (state.lastSessionStart || state.born)) / 60000;
     const energy = Math.round(Math.max(5, 100 - sessionMin * 0.4));
-    const cleanliness = git.inRepo ? Math.round(Math.max(5, 100 - git.dirty * 6)) : 100;
+    const errors = getErrorInfo();
+    const errorDirt = Math.min(60, (errors.recentErrors || 0) * 15);
+    const sessionDirt = Math.min(20, (state.totalSessions || 0) * 3);
+    const fileDirt = Math.min(15, Math.floor((state.filesTouched || 0) / 5));
+    const cleanliness = Math.round(Math.max(5, 100 - errorDirt - sessionDirt - fileDirt));
     const happiness = Math.round(hunger * 0.3 + energy * 0.3 + cleanliness * 0.25 + Math.min(15, (state.streak || 1) * 3));
 
     const SPECIES_ARR = ['cat','dog','rabbit','hamster','bird','fish','turtle','snake','frog','bear','fox','penguin','owl','dragon','ghost','robot','alien','star'];
