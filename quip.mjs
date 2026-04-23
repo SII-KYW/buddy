@@ -259,16 +259,18 @@ ${situationText}
 - 只输出这句话本身`;
   }
 
-  return prompt;
+  return { prompt, isThought };
 }
 
 // ---- Main ----
 
-const prompt = buildPrompt();
-if (!prompt) { console.log('no state'); process.exit(1); }
+const result = buildPrompt();
+if (!result) { console.log('no state'); process.exit(1); }
 
 const PROMPT_FILE = path.join(DIR, 'quip-prompt.txt');
-fs.writeFileSync(PROMPT_FILE, prompt);
+fs.writeFileSync(PROMPT_FILE, result.prompt);
+// Write thought marker
+fs.writeFileSync(path.join(DIR, 'quip-mode.txt'), result.isThought ? 'thought' : 'quip');
 
 // Prompt written — LLM call is done externally (quip-gen.sh / cron)
 // Just report what we have
