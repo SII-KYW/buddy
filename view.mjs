@@ -1,159 +1,267 @@
 #!/usr/bin/env node
 
 /**
- * Buddy Pet Viewer — Full ASCII Art Interface
+ * Buddy — Real-time Pet Dashboard
  *
- * Usage:
- *   node view.mjs              Show pet status
- *   node view.mjs hatch        Hatch a new pet
- *   node view.mjs feed         Feed your pet
- *   node view.mjs play         Play with your pet
- *   node view.mjs sleep        Put pet to sleep
+ * Run in a separate terminal:
+ *   node view.mjs
+ *
+ * Auto-refreshes every 5s, reads state from ~/.claude/buddy/state.json
+ * (updated by statusline & loop agent in your Claude Code terminal).
+ *
+ * Keys: [p]pet [r]efresh [h]atch [q]uit
  */
 
 import {
-  SPECIES, loadState, saveState, hatch, feed, play, sleep,
-  decayStats, getSpeciesDef, getArt, formatAge, getMood, hatched,
+  loadState, saveState, hatch, hatched, getGitInfo,
+  computeStats, getMood, getMoodLabel, getStatusEffects,
+  getSpeciesDef, getArt, formatAge, formatSessionTime,
+  getContextualThought, getXpProgress, getLevelTitle, xpForLevel,
+  PERSONALITY_LABELS, getPetResponse, trackSession, trackCommit,
+  trackPush, trackFileChanges, trackContextGrowth,
 } from './pet-engine.mjs';
 
-const ANSI = {
-  reset:   '\x1b[0m',
-  bold:    '\x1b[1m',
-  dim:     '\x1b[2m',
-  red:     '\x1b[31m',
-  green:   '\x1b[32m',
-  yellow:  '\x1b[33m',
-  blue:    '\x1b[34m',
-  magenta: '\x1b[35m',
-  cyan:    '\x1b[36m',
-  white:   '\x1b[37m',
+const W = 52; // Dashboard width
+
+// ═══════════════════════════════════════════════════════════════════
+// ANSI helpers
+// ═══════════════════════════════════════════════════════════════════
+
+const ESC = '\x1b[';
+const C = {
+  reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m',
+  black: '\x1b[30m', red: '\x1b[31m', green: '\x1b[32m',
+  yellow: '\x1b[33m', blue: '\x1b[34m', magenta: '\x1b[35m',
+  cyan: '\x1b[36m', white: '\x1b[37m',
+  bgBlack: '\x1b[40m', bgBlue: '\x1b[44m', bgMagenta: '\x1b[45m',
 };
 
-function c(color, s) { return `${ANSI[color]}${s}${ANSI.reset}`; }
+const c = (color, s) => `${C[color]}${s}${C.reset}`;
+const pad = (s, w, ch = ' ') => {
+  // Strip ANSI for width calculation
+  const stripped = s.replace(/\x1b\[[0-9;]*m/g, '');
+  const diff = w - [...stripped].length;
+  return diff > 0 ? s + ch.repeat(diff) : s;
+};
+const center = (s, w) => {
+  const stripped = s.replace(/\x1b\[[0-9;]*m/g, '');
+  const len = [...stripped].length;
+  const left = Math.floor((w - len) / 2);
+  return ' '.repeat(Math.max(0, left)) + s;
+};
 
-function statBar(value, width = 20) {
+function statBar(value, width = 16) {
   const pct = Math.max(0, Math.min(100, value));
   const filled = Math.round((pct / 100) * width);
   const color = pct > 50 ? 'green' : pct > 20 ? 'yellow' : 'red';
   return c(color, '█'.repeat(filled) + '░'.repeat(width - filled));
 }
 
-function clear() {
-  process.stdout.write('\x1b[2J\x1b[H');
+function xpBar(current, needed, width = 16) {
+  const pct = Math.min(1, current / needed);
+  const filled = Math.round(pct * width);
+  return c('cyan', '▓'.repeat(filled) + '░'.repeat(width - filled));
 }
 
-function renderFull(state) {
+// ═══════════════════════════════════════════════════════════════════
+// Event log (in-memory, recent events)
+// ═══════════════════════════════════════════════════════════════════
+
+const eventLog = [];
+const MAX_EVENTS = 5;
+
+function addEvent(msg) {
+  const ts = new Date().toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' });
+  eventLog.unshift(`[${ts}] ${msg}`);
+  if (eventLog.length > MAX_EVENTS) eventLog.pop();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Rendering
+// ═══════════════════════════════════════════════════════════════════
+
+function render(state, ctxPct, gitInfo) {
+  if (!state) return ['No pet yet. Press [h] to hatch!'];
+
+  const stats = computeStats(state, ctxPct, gitInfo);
+  const mood = getMood(stats);
+  const effects = getStatusEffects(stats);
   const species = getSpeciesDef(state.species);
-  const art = getArt(state);
-  const mood = getMood(state.stats);
+  const art = getArt(state, mood);
+  const xpInfo = getXpProgress(state);
+  const level = state.level || 1;
   const age = formatAge(state.born);
+  const sessTime = formatSessionTime(state);
+  const thought = getContextualThought(state, stats, gitInfo);
+  const line = (s) => '║ ' + pad(s, W - 2) + ' ║';
+  const empty = () => line('');
 
-  const h = Math.round(state.stats.hunger);
-  const p = Math.round(state.stats.happiness);
-  const e = Math.round(state.stats.energy);
+  const rows = [];
 
-  const lines = [];
+  // Top border
+  rows.push('╔' + '═'.repeat(W - 2) + '╗');
 
-  // Title
-  const title = state.shiny
-    ? c('magenta', '✨ SHINY ✨ ') + c('bold', state.name) + c('magenta', ' ✨ SHINY ✨')
-    : c('bold', state.name);
-  lines.push('');
-  lines.push(`    ${title}  ${c('dim', `the ${species.label}`)}`);
-  lines.push(`    ${c('dim', `"${state.personality}"`)}  ${c('cyan', age)}`);
-  lines.push('');
+  // Header
+  const shiny = state.shiny ? c('magenta', ' ✨SHINY✨') : '';
+  const emoji = species.emoji;
+  rows.push(line(c('bold', ` ${emoji} ${state.name}${shiny}  —  ${PERSONALITY_LABELS[state.personality] || state.personality}`)));
+  rows.push(line(c('dim', ` ${age}  |  Session: ${sessTime}  |  Streak: ${state.streak || 1}d`)));
+  rows.push(line(c('dim', ` Lv.${level} ${c('yellow', getLevelTitle(level))}  ${xpBar(xpInfo.current, xpInfo.needed)}  ${xpInfo.current}/${xpInfo.needed} XP`)));
 
-  // ASCII art centered
-  const artLines = art.map(l => '        ' + l);
-  for (const line of artLines) {
-    lines.push(line);
+  rows.push('╟' + '─'.repeat(W - 2) + '╢');
+
+  // ASCII art
+  for (const a of art) {
+    rows.push(line(center(a.trimEnd(), W - 4)));
   }
-  lines.push('');
 
-  // Stats
-  const moodIcon = { ecstatic: '🤩', happy: '😊', content: '😐', gloomy: '😞', critical: '😱' };
-  lines.push(`    ${c('bold', 'Mood')}:     ${moodIcon[mood] || '😐'} ${c('cyan', mood)}`);
-  lines.push(`    ${c('bold', 'Happiness')}: ❤️  ${statBar(p)} ${c('bold', p + '%')}`);
-  lines.push(`    ${c('bold', 'Hunger')}:    🍖 ${statBar(h)} ${c('bold', h + '%')}`);
-  lines.push(`    ${c('bold', 'Energy')}:    ⚡ ${statBar(e)} ${c('bold', e + '%')}`);
-  lines.push('');
+  rows.push(empty());
 
-  // Warnings
-  if (h <= 20) lines.push(`    ${c('red', '⚠ ' + state.name + ' is starving! Feed me!')}`);
-  if (p <= 20) lines.push(`    ${c('yellow', '⚠ ' + state.name + ' is very unhappy... Play with me!')}`);
-  if (e <= 20) lines.push(`    ${c('blue', '⚠ ' + state.name + ' is exhausted... Let me sleep!')}`);
+  // Mood
+  rows.push(line(` Mood: ${getMoodLabel(mood)}`));
 
-  return lines.join('\n');
+  // Stats with real context
+  const h = stats.hunger, hp = stats.happiness, e = stats.energy, cl = stats.cleanliness;
+  rows.push(line(` ${c('red','❤')} Happiness  ${statBar(hp)} ${c('bold', hp+'%')}`));
+  rows.push(line(` ${c('yellow','🍖')} Hunger     ${statBar(h)} ${c('bold', h+'%')}  ${c('dim', `ctx ${Math.round(ctxPct)}%`)}`));
+  rows.push(line(` ${c('blue','⚡')} Energy     ${statBar(e)} ${c('bold', e+'%')}  ${c('dim', sessTime)}`));
+  rows.push(line(` ${c('cyan','🛁')} Clean      ${statBar(cl)} ${c('bold', cl+'%')}  ${c('dim', gitInfo?.inRepo ? `${gitInfo.dirty} dirty` : 'no git')}`));
+
+  // Status effects
+  if (effects.length > 0) {
+    const icons = {
+      'context-heavy': c('red', '📚ctx-heavy'), 'overtime': c('blue', '⏰overtime'),
+      'messy-repo': c('yellow', '🧹messy'), 'in-flow': c('green', '🌟in-flow'),
+    };
+    rows.push(line(' ' + effects.map(e => icons[e] || e).join('  ')));
+  }
+
+  rows.push(empty());
+
+  // Thought bubble
+  rows.push(line(c('dim', ` 💭 ${state.name} ${thought}`)));
+
+  rows.push('╟' + '─'.repeat(W - 2) + '╢');
+
+  // Event log
+  if (eventLog.length > 0) {
+    for (const ev of eventLog) {
+      rows.push(line(c('dim', ` ${ev}`)));
+    }
+  } else {
+    rows.push(line(c('dim', ' Watching your coding activity...')));
+  }
+
+  rows.push('╟' + '─'.repeat(W - 2) + '╢');
+
+  // Footer
+  rows.push(line(c('dim', ` Commits: ${state.totalCommits || 0}  Pushes: ${state.totalPushes || 0}  Files: ${state.filesTouched || 0}`)));
+  rows.push(line(c('dim', ' [p]pet [r]efresh [h]atch [q]uit')));
+
+  rows.push('╚' + '═'.repeat(W - 2) + '╝');
+
+  return rows;
 }
 
-function renderAction(state, action) {
-  const name = state.name;
-  const messages = {
-    feed:  [
-      `${name} munches happily! 🍖`,
-      `${name} devours the food! Yum yum!`,
-      `${name} licks the bowl clean! Delicious!`,
-    ],
-    play:  [
-      `${name} jumps around excitedly! 🎾`,
-      `${name} does a little dance! So cute!`,
-      `${name} chases after the toy! Wheee!`,
-    ],
-    sleep: [
-      `${name} curls up and snoozes... 💤`,
-      `${name} yawns widely and falls asleep. Zzz...`,
-      `${name} nestles in and drifts off. Sweet dreams!`,
-    ],
-  };
-  const pool = messages[action] || [`${name} does something!`];
-  return pool[Math.floor(Math.random() * pool.length)];
+// ═══════════════════════════════════════════════════════════════════
+// Main loop
+// ═══════════════════════════════════════════════════════════════════
+
+// Hide cursor, enter alternate screen
+process.stdout.write('\x1b[?25l\x1b[?1049h');
+
+function clearAndDraw(rows) {
+  process.stdout.write('\x1b[H'); // Move to top-left
+  for (const row of rows) {
+    process.stdout.write(row + '\x1b[K\n'); // Clear to end of line
+  }
+  // Clear remaining lines
+  process.stdout.write('\x1b[J');
 }
 
-// ---- Main ----
-const action = process.argv[2];
+let lastCommitHash = '';
+let lastAheadCount = -1;
 
-if (action === 'hatch' || !hatched()) {
-  if (hatched() && action !== 'hatch') {
-    console.log(c('dim', 'No buddy yet. Hatching a new one...'));
+function update() {
+  const state = loadState();
+  if (!state) {
+    clearAndDraw(['', '', '  No pet yet! Press [h] to hatch one.']);
+    return;
   }
-  clear();
-  const state = hatch();
-  const species = getSpeciesDef(state.species);
-  console.log('');
-  console.log('    ' + c('magenta', '╔══════════════════════════════╗'));
-  console.log('    ' + c('magenta', '║   🥚  A new buddy is born!  ║'));
-  console.log('    ' + c('magenta', '╚══════════════════════════════╝'));
-  console.log('');
-  if (state.shiny) {
-    console.log('    ' + c('yellow', c('bold', '★ SHINY ★ This is extremely rare (1% chance)! ★')));
-    console.log('');
+
+  const git = getGitInfo();
+  let save = false;
+
+  // Detect new commits
+  if (git.hash && git.hash !== lastCommitHash) {
+    if (lastCommitHash) addEvent(c('green', `Commit ${git.hash} (+15xp)`));
+    lastCommitHash = git.hash;
+    save = true;
   }
-  console.log(renderFull(state));
-  console.log(`    ${c('dim', 'Use: node view.mjs feed | play | sleep')}`);
-  console.log('');
+
+  // Detect pushes
+  if (git.inRepo && lastAheadCount >= 0) {
+    if (lastAheadCount > 0 && git.ahead === 0) {
+      addEvent(c('cyan', 'Pushed to remote! (+10xp)'));
+    }
+  }
+  lastAheadCount = git.ahead;
+
+  // Estimate context from session time (we don't have stdin here)
+  const sessionMin = (Date.now() - (state.lastSessionStart || state.born)) / 60000;
+  const ctxPct = Math.min(95, sessionMin * 0.5);
+
+  if (save) saveState(state);
+
+  const rows = render(state, ctxPct, git);
+  clearAndDraw(rows);
+}
+
+// Keyboard
+process.stdin.setRawMode(true);
+process.stdin.resume();
+process.stdin.setEncoding('utf8');
+
+process.stdin.on('data', (key) => {
+  if (key === 'q' || key === '\x03') { // q or Ctrl+C
+    process.stdout.write('\x1b[?25h\x1b[?1049l'); // Restore cursor + screen
+    process.stdout.write('\x1b[2J\x1b[H');
+    const state = loadState();
+    if (state) console.log(`Goodbye! ${state.name} will keep watching. 💚`);
+    process.exit(0);
+  }
+
+  if (key === 'p') {
+    const state = loadState();
+    if (state) {
+      const resp = getPetResponse(state);
+      addEvent(c('magenta', `You pet ${state.name}: ${resp}`));
+      update();
+    }
+  }
+
+  if (key === 'r') {
+    update();
+  }
+
+  if (key === 'h') {
+    const state = hatch();
+    const species = getSpeciesDef(state.species);
+    lastCommitHash = '';
+    lastAheadCount = -1;
+    addEvent(c('magenta', `Hatched ${state.name} the ${species.label}!${state.shiny ? ' SHINY!' : ''}`));
+    update();
+  }
+});
+
+// Graceful exit on signals
+const cleanup = () => {
+  process.stdout.write('\x1b[?25h\x1b[?1049l\x1b[2J\x1b[H');
   process.exit(0);
-}
+};
+process.on('SIGTERM', cleanup);
+process.on('SIGINT', cleanup);
 
-if (!['feed', 'play', 'sleep'].includes(action)) {
-  const state = decayStats(loadState());
-  clear();
-  console.log(renderFull(state));
-  console.log(`    ${c('dim', 'Actions: node view.mjs [feed|play|sleep|hatch]')}`);
-  console.log('');
-  process.exit(0);
-}
-
-const raw = loadState();
-const state = decayStats(raw);
-clear();
-
-switch (action) {
-  case 'feed':  feed(state);  break;
-  case 'play':  play(state);  break;
-  case 'sleep': sleep(state); break;
-}
-
-const updated = decayStats(loadState());
-console.log(renderFull(updated));
-console.log(`    ${c('green', '→ ' + renderAction(raw, action))}`);
-console.log('');
+// Initial draw + auto-refresh every 5s
+update();
+setInterval(update, 5000);

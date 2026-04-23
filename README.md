@@ -1,78 +1,109 @@
-# Buddy — Tamagotchi Pet for Claude Code CLI 🐾
+# Buddy — Coding Health Pet for Claude Code
 
 English | [中文](README_ZH.md)
 
-A Tamagotchi-style virtual pet that lives in your Claude Code status bar. 18 species, 1% shiny rate, and real stat decay — take care of your buddy while you code!
+A coding health dashboard disguised as a Tamagotchi pet in your Claude Code status bar. Stats are auto-computed from your real coding activity — context usage, git status, session time — no manual feeding needed. Plus, your pet generates witty quips using AI.
 
-## Screenshot
-
-```
-    Sora  the Dog
-    "energetic and playful"  just born
-
-          / \__
-         (    @\
-         /    \
-        /  |  | \
-        V__|__|__/
-
-    Mood:     🤩 ecstatic
-    Happiness: ❤️  ████████████████████ 100%
-    Hunger:    🍖 ████████████████████ 100%
-    Energy:    ⚡ ████████████████████ 100%
-```
-
-Statusline (bottom of Claude Code):
+## Statusline
 
 ```
-🐕 Sora ❤100 🍖90 ⚡85  glm-5.1[200K] Ctx ▓░░░░░ 0%  5h ▓░░░░░ 20%  MCP ░░░░░░ 72/1000
+glm-5.1[200K] Ctx ▓▓░░░░ 35%  5h ░░░░░░ 8%  week ▓░░░░░ 24%  MCP ░░░░░░ 334/4000
+🦊 StormLv5 ❤73 🍖60 ⚡90  所以我是你commit出来的那我能继承你的发际线吗
 ```
 
-## Features
+Line 1: Model info + context bar + GLM quota
+Line 2: Pet stats + AI-generated quip
 
-| Feature | Description |
-|---------|-------------|
-| **18 species** | Cat, Dog, Rabbit, Hamster, Bird, Fish, Turtle, Snake, Frog, Bear, Fox, Penguin, Owl, Dragon, Ghost, Robot, Alien, Star |
-| **1% shiny rate** | Rare shiny variant with ✨ sparkle effect |
-| **Stat decay** | Hunger, Happiness, and Energy decrease over time |
-| **Actions** | Feed, Play, Sleep — each affects stats differently |
-| **Personality** | Random name + personality trait for each pet |
-| **Statusline** | Compact pet status in Claude Code bottom bar |
-| **GLM/ZHIPU quota** | Integrated with [glm-cc-bar](https://github.com/ziHoHe/glm-cc-bar) quota display |
-| **`/buddy` command** | Full ASCII art viewer via Claude Code slash command |
-| **Zero dependencies** | Pure Node.js, no npm install needed |
+## Dashboard (separate terminal)
 
-## Requirements
+```
+╔══════════════════════════════════════════════════════╗
+║ 🦊 Storm ✨SHINY✨  —  好奇宝宝                      ║
+║ 5分钟大  |  Session: 3分钟  |  Streak: 1d            ║
+║ Lv.5 新手  ▓▓░░░░░░░░░░░░░░  12/125 XP              ║
+╟──────────────────────────────────────────────────────╢
+║               /\___/\                                ║
+║              /  o o  \                               ║
+║             (   =^=   )                              ║
+║              \  ~_~  /                               ║
+║               ^^^^^^^                                ║
+║                                                      ║
+║ Mood: 😊 happy                                       ║
+║ ❤ Happiness  ██████████████████░░░░ 73%              ║
+║ 🍖 Hunger     ████████████░░░░░░░░░░ 60%  ctx 35%    ║
+║ ⚡ Energy      ██████████████████░░░░ 90%  3min      ║
+║ 🛁 Clean       ████████████████████░░ 100% 0 dirty   ║
+║ 🌟in-flow                                           ║
+║                                                      ║
+║ 💭 Storm 深夜的终端里藏着什么秘密呢                    ║
+╟──────────────────────────────────────────────────────╢
+║ Commits: 5  Pushes: 2  Files: 12                     ║
+║ [p]pet [r]efresh [h]atch [q]uit                      ║
+╚══════════════════════════════════════════════════════╝
+```
 
-- Claude Code CLI
-- Node.js 18+
-- (Optional) A GLM/ZHIPU Coding Plan for quota display
+## How Stats Work (no manual interaction)
+
+| Stat | Driven by | Meaning |
+|------|-----------|---------|
+| **Hunger** | Inverse of context % | More context = hungrier pet (working hard) |
+| **Energy** | Session duration | Longer session = lower energy |
+| **Cleanliness** | Git dirty files | More uncommitted changes = messier |
+| **Happiness** | Weighted composite | Overall coding health indicator |
+
+## XP System
+
+Your pet levels up from real coding activity:
+
+| Action | XP | Trigger |
+|--------|----|---------|
+| Session start | +5 | New session after 30min gap |
+| Git commit | +15 | New commit detected |
+| Git push | +10 | `ahead` count drops to 0 |
+| File changes | +2/file (cap +8) | New dirty files detected |
+| Context growth | +2 per 5% | Context window expanding |
+| Compaction | +12 | Context auto-compacted |
+| Cleanup bonus | +8 | All dirty files resolved |
+
+## AI Quips
+
+Your pet generates witty one-liners using `claude -p` (runs your configured model). It knows about:
+
+- **Time** — late night? weekend? different vibes
+- **Weather** — via `wttr.in`
+- **Git status** — branch, dirty files, unpushed commits
+- **Session recap** — reads Claude Code's `away_summary` from transcript, or falls back to recent user messages
+- **Pet personality** — 12 personalities with distinct voice styles
+
+Examples:
+- *"所以我是你commit出来的那我能继承你的发际线吗"*
+- *"你刚刚提交了一只电子宠物然后立刻/clear掉了我会不会是下一个被清掉的"*
+- *"刚写完电子宠物就/clear我 程序员都这么赛博弃养的吗"*
+
+## Architecture
+
+```
+statusline.mjs          Entry point — called by Claude Code periodically
+├── pet-engine.mjs      Core engine — species, stats, ASCII art, personalities
+├── quip.mjs            Prompt builder — gathers context, writes prompt file
+├── quip-gen.sh         Calls `claude -p` to generate quip (background, non-blocking)
+├── tick.mjs            Lightweight tick for loop agents
+└── view.mjs            Standalone TUI dashboard (run in a separate terminal)
+
+Data:
+├── ~/.claude/buddy/state.json      Pet state (persists across sessions)
+├── ~/.claude/buddy/quip.txt        Cached quip (refreshed every minute)
+├── ~/.claude/buddy/quip-prompt.txt Latest prompt for quip generation
+└── ~/.claude/buddy/git-cache.json  Git info cache (20s TTL)
+```
 
 ## Install
 
 ### 1. Get the files
 
-**Option A: git clone**
-
 ```bash
-git clone https://github.com/YOUR_USERNAME/buddy.git ~/.claude/scripts/buddy
+git clone https://github.com/cog-mycc/buddy.git ~/.claude/scripts/buddy
 ```
-
-**Option B: curl (core files only)**
-
-```bash
-mkdir -p ~/.claude/scripts/buddy
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/buddy/main/pet-engine.mjs -o ~/.claude/scripts/buddy/pet-engine.mjs
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/buddy/main/statusline.mjs -o ~/.claude/scripts/buddy/statusline.mjs
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/buddy/main/view.mjs -o ~/.claude/scripts/buddy/view.mjs
-chmod +x ~/.claude/scripts/buddy/*.mjs
-```
-
-**Option C: Tell Claude Code**
-
-Paste this into your Claude Code chat:
-
-> Install the buddy pet statusline from https://github.com/YOUR_USERNAME/buddy — read AGENT_INSTALL.md in the repo for instructions.
 
 ### 2. Configure Claude Code
 
@@ -88,83 +119,53 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-If you have GLM/ZHIPU env vars, the statusline will also show quota bars. Make sure your `env` block includes `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN`.
-
-### 3. Set up the /buddy command
-
-Create the slash command file:
+### 3. (Optional) Set up /buddy command
 
 ```bash
 mkdir -p ~/.claude/commands
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/buddy/main/commands/buddy.md -o ~/.claude/commands/buddy.md
+cp ~/.claude/scripts/buddy/../commands/buddy.md ~/.claude/commands/buddy.md
 ```
 
 ### 4. Restart Claude Code
 
-Restart to see your buddy in the status bar. A new pet will hatch automatically on first load!
+Your pet hatches automatically on first load!
 
-## Usage
-
-### Statusline
-
-Your pet status appears at the bottom of Claude Code:
-
-```
-🐕 Sora ❤100 🍖60 ⚡85  glm-5.1[200K] Ctx ▓▓░░░░ 51%  5h ▓▓░░░░ 20%
-```
-
-Stats color-code automatically:
-- **Green** — stat above 50%
-- **Yellow** — stat between 20% and 50%
-- **Red** — stat below 20% (your buddy needs help!)
-
-### /buddy command
-
-Type `/buddy` in Claude Code to see the full ASCII art viewer, then ask Claude to feed, play, or put your pet to sleep.
-
-### Direct CLI
+### 5. (Optional) Dashboard in separate terminal
 
 ```bash
-# View pet status
 node ~/.claude/scripts/buddy/view.mjs
-
-# Hatch a new pet (random species, 1% shiny!)
-node ~/.claude/scripts/buddy/view.mjs hatch
-
-# Interact
-node ~/.claude/scripts/buddy/view.mjs feed
-node ~/.claude/scripts/buddy/view.mjs play
-node ~/.claude/scripts/buddy/view.mjs sleep
 ```
 
-## How it works
+Keys: `[p]` pet `[r]` refresh `[h]` hatch new `[q]` quit
 
-1. **State** is persisted to `~/.claude/buddy/state.json`
-2. **Stat decay** runs automatically — Hunger decreases 0.5/min, Happiness 0.3/min, Energy 0.2/min
-3. **Statusline** reads state on each render cycle (every few seconds)
-4. **Actions** modify stats: Feed (+30 hunger), Play (+25 happiness, -15 energy), Sleep (+40 energy)
+## 18 Species / 12 Personalities
 
-### Actions at a glance
+| Species | | | | | | |
+|---------|---|---|---|---|---|---|
+| 🐱 Cat | 🐕 Dog | 🐰 Rabbit | 🐹 Hamster | 🐦 Bird | 🐟 Fish | 🐢 Turtle |
+| 🐍 Snake | 🐸 Frog | 🐻 Bear | 🦊 Fox | 🐧 Penguin | 🦉 Owl | 🐉 Dragon |
+| 👻 Ghost | 🤖 Robot | 👾 Alien | ⭐ Star | | | |
 
-| Action | Hunger | Happiness | Energy |
-|--------|--------|-----------|--------|
-| Feed   | +30    | +5        | —      |
-| Play   | -10    | +25       | -15    |
-| Sleep  | -5     | +5        | +40    |
+| Personality | Chinese |
+|-------------|---------|
+| lazy | 懒洋洋 |
+| energetic | 元气满满 |
+| shy | 社恐 |
+| mischievous | 调皮捣蛋 |
+| brave | 勇猛 |
+| curious | 好奇宝宝 |
+| proud | 傲娇 |
+| gentle | 温柔 |
+| grumpy | 暴躁 |
+| clumsy | 冒失鬼 |
+| wise | 老成 |
+| chaotic | 混沌邪恶 |
 
-## All 18 Species
+## Requirements
 
-| # | Species | Emoji | # | Species | Emoji |
-|---|---------|-------|---|---------|-------|
-| 1 | Cat     | 🐱   | 10 | Bear   | 🐻  |
-| 2 | Dog     | 🐕   | 11 | Fox    | 🦊  |
-| 3 | Rabbit  | 🐰   | 12 | Penguin| 🐧  |
-| 4 | Hamster | 🐹   | 13 | Owl    | 🦉  |
-| 5 | Bird    | 🐦   | 14 | Dragon | 🐉  |
-| 6 | Fish    | 🐟   | 15 | Ghost  | 👻  |
-| 7 | Turtle  | 🐢   | 16 | Robot  | 🤖  |
-| 8 | Snake   | 🐍   | 17 | Alien  | 👾  |
-| 9 | Frog    | 🐸   | 18 | Star   | ⭐  |
+- Claude Code CLI
+- Node.js 18+
+- (Optional) GLM/ZHIPU Coding Plan for quota display
 
 ## License
 
