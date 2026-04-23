@@ -34,6 +34,30 @@ if (baseUrl) {
 }
 const isGLM = messagesUrl?.hostname?.includes('bigmodel');
 
+// ---- i18n ----
+const LANG = (() => {
+  const loc = process.env.LANG || process.env.LC_ALL || '';
+  if (loc.startsWith('zh')) return 'zh';
+  try { if (Intl.DateTimeFormat().resolvedOptions().locale.startsWith('zh')) return 'zh'; } catch {}
+  return 'en';
+})();
+
+const SPECIES_NAME = {
+  cat:{zh:'猫',en:'cat'},dog:{zh:'狗',en:'dog'},rabbit:{zh:'兔子',en:'rabbit'},hamster:{zh:'仓鼠',en:'hamster'},
+  bird:{zh:'鸟',en:'bird'},fish:{zh:'鱼',en:'fish'},turtle:{zh:'乌龟',en:'turtle'},snake:{zh:'蛇',en:'snake'},
+  frog:{zh:'青蛙',en:'frog'},bear:{zh:'熊',en:'bear'},fox:{zh:'狐狸',en:'fox'},penguin:{zh:'企鹅',en:'penguin'},
+  owl:{zh:'猫头鹰',en:'owl'},dragon:{zh:'龙',en:'dragon'},ghost:{zh:'幽灵',en:'ghost'},robot:{zh:'机器人',en:'robot'},
+  alien:{zh:'外星人',en:'alien'},star:{zh:'星星',en:'star'},
+};
+const PERSONALITY_NAME = {
+  lazy:{zh:'懒洋洋',en:'lazy'},energetic:{zh:'元气满满',en:'energetic'},shy:{zh:'社恐',en:'shy'},
+  mischievous:{zh:'调皮捣蛋',en:'mischievous'},brave:{zh:'勇猛',en:'brave'},curious:{zh:'好奇宝宝',en:'curious'},
+  proud:{zh:'傲娇',en:'proud'},gentle:{zh:'温柔',en:'gentle'},grumpy:{zh:'暴躁',en:'grumpy'},
+  clumsy:{zh:'冒失鬼',en:'clumsy'},wise:{zh:'老成',en:'wise'},chaotic:{zh:'混沌邪恶',en:'chaotic'},
+};
+function sp(key) { return (SPECIES_NAME[key] || {})[LANG] || key; }
+function ps(key) { return (PERSONALITY_NAME[key] || {})[LANG] || key; }
+
 const c = {
   g: s => `\x1b[32m${s}\x1b[0m`, y: s => `\x1b[33m${s}\x1b[0m`,
   r: s => `\x1b[31m${s}\x1b[0m`, c: s => `\x1b[36m${s}\x1b[0m`,
@@ -134,11 +158,10 @@ function triggerLoreEvolution(state) {
     if (Date.now() - st.mtimeMs < 60000) return;
   } catch {}
   try { fs.writeFileSync(LORE_LOCK, String(Date.now())); } catch {}
-  const SPECIES_CN = {cat:'猫',dog:'狗',rabbit:'兔子',hamster:'仓鼠',bird:'鸟',fish:'鱼',turtle:'乌龟',snake:'蛇',frog:'青蛙',bear:'熊',fox:'狐狸',penguin:'企鹅',owl:'猫头鹰',dragon:'龙',ghost:'幽灵',robot:'机器人',alien:'外星人',star:'星星'};
-  const PERSONALITY_CN = {lazy:'懒洋洋',energetic:'元气满满',shy:'社恐',mischievous:'调皮捣蛋',brave:'勇猛',curious:'好奇宝宝',proud:'傲娇',gentle:'温柔',grumpy:'暴躁',clumsy:'冒失鬼',wise:'老成',chaotic:'混沌邪恶'};
-  const sp = SPECIES_CN[state.species] || state.species;
-  const ps = PERSONALITY_CN[state.personality] || state.personality;
-  const prompt = `你是一个创意作家。一只住在终端里的电子${sp}升级到了Lv.${state.level}。\n\n当前性格描写：${state.personalityDetail || '刚出生'}\n性格关键词：${ps}\n\n请在保持核心性格不变的前提下，微调性格描写，体现成长（更成熟/更有趣/新习惯）。\n\n只输出更新后的性格描写（200字以内），不要其他内容。`;
+  const s = sp(state.species), p = ps(state.personality);
+  const prompt = LANG === 'zh'
+    ? `你是一个创意作家。一只住在终端里的电子${s}升级到了Lv.${state.level}。\n\n当前性格描写：${state.personalityDetail || '刚出生'}\n性格关键词：${p}\n\n请在保持核心性格不变的前提下，微调性格描写，体现成长（更成熟/更有趣/新习惯）。\n\n只输出更新后的性格描写（200字以内），不要其他内容。`
+    : `You are a creative writer. A ${p} digital ${s} living in a terminal just leveled up to Lv.${state.level}.\n\nCurrent personality: ${state.personalityDetail || 'just born'}\nPersonality keyword: ${p}\n\nSlightly evolve the personality description while keeping the core traits. Reflect growth (more mature/funnier/new habits).\n\nOutput only the updated personality description (under 200 words), nothing else.`;
   callGLMAPI(prompt, result => {
     if (result) {
       try {
@@ -157,11 +180,11 @@ function triggerLoreMissing(state) {
     if (Date.now() - st.mtimeMs < 60000) return;
   } catch {}
   try { fs.writeFileSync(LORE_LOCK, String(Date.now())); } catch {}
-  const SPECIES_CN = {cat:'猫',dog:'狗',rabbit:'兔子',hamster:'仓鼠',bird:'鸟',fish:'鱼',turtle:'乌龟',snake:'蛇',frog:'青蛙',bear:'熊',fox:'狐狸',penguin:'企鹅',owl:'猫头鹰',dragon:'龙',ghost:'幽灵',robot:'机器人',alien:'外星人',star:'星星'};
-  const PERSONALITY_CN = {lazy:'懒洋洋',energetic:'元气满满',shy:'社恐',mischievous:'调皮捣蛋',brave:'勇猛',curious:'好奇宝宝',proud:'傲娇',gentle:'温柔',grumpy:'暴躁',clumsy:'冒失鬼',wise:'老成',chaotic:'混沌邪恶'};
-  const sp = SPECIES_CN[state.species] || state.species;
-  const ps = PERSONALITY_CN[state.personality] || state.personality;
-  const prompt = `你是一个创意作家。为一只住在程序员终端里的电子宠物生成设定。\n\n宠物信息：\n- 名字：${state.name}\n- 物种：${sp}\n- 性格关键词：${ps}${state.shiny ? '\n- 特殊：✨闪光变种（稀有）' : ''}\n\n请生成以下内容，用 === 分隔两部分：\n\n第一部分（背景故事，200字以内）：写一段有趣的背景故事，描述这只${sp}是怎么来到程序员的终端里的。\n\n第二部分（性格描写，200字以内）：基于"${ps}"这个性格关键词，描写它的具体行为习惯、说话方式、小动作。\n\n只输出这两部分，用 === 分隔，不要其他内容。`;
+  const s = sp(state.species), p = ps(state.personality);
+  const shinyTag = state.shiny ? (LANG === 'zh' ? '\n- 特殊：✨闪光变种（稀有）' : '\n- Special: ✨ shiny variant (rare)') : '';
+  const prompt = LANG === 'zh'
+    ? `你是一个创意作家。为一只住在程序员终端里的电子宠物生成设定。\n\n宠物信息：\n- 名字：${state.name}\n- 物种：${s}\n- 性格关键词：${p}${shinyTag}\n\n请生成以下内容，用 === 分隔两部分：\n\n第一部分（背景故事，200字以内）：写一段有趣的背景故事，描述这只${s}是怎么来到程序员的终端里的。\n\n第二部分（性格描写，200字以内）：基于"${p}"这个性格关键词，描写它的具体行为习惯、说话方式、小动作。\n\n只输出这两部分，用 === 分隔，不要其他内容。`
+    : `You are a creative writer. Generate lore for a digital pet living in a programmer's terminal.\n\nPet info:\n- Name: ${state.name}\n- Species: ${s}\n- Personality: ${p}${shinyTag}\n\nGenerate two parts, separated by ===:\n\nPart 1 (backstory, under 200 words): A fun backstory of how this ${s} ended up in a programmer's terminal.\n\nPart 2 (personality detail, under 200 words): Based on the "${p}" personality, describe specific habits, speech patterns, quirks.\n\nOutput only these two parts separated by ===, nothing else.`;
   callGLMAPI(prompt, result => {
     if (result) {
       try {
