@@ -4,6 +4,8 @@ English | [中文](README_ZH.md)
 
 A coding health dashboard disguised as a Tamagotchi pet in your Claude Code status bar. Stats are auto-computed from your real coding activity — context usage, git status, session time — no manual feeding needed. Your pet generates witty quips via AI, has its own backstory, and evolves as you code.
 
+Inspired by [glm-cc-bar](https://github.com/ziHoHe/glm-cc-bar) — GLM quota monitor for Claude Code.
+
 ## Features
 
 - **Zero-interaction pet** — stats auto-update from your real coding activity (commits, pushes, context usage, file edits)
@@ -202,10 +204,6 @@ Each species has a rare ✨ shiny variant (5% chance on hatch).
 - Claude Code CLI
 - Node.js 18+
 - Any LLM provider with Anthropic Messages API compatibility (GLM/ZHIPU, Anthropic, OpenRouter, etc.)
-
-## Acknowledgments
-
-Inspired by [glm-cc-bar](https://github.com/ziHoHe/glm-cc-bar) — GLM quota monitor for Claude Code.
 
 ## License
 
