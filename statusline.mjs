@@ -484,7 +484,8 @@ async function main() {
   // Line 2: Model + Context
   line2.push(c.b(c.c(`${model}[${fmtCtx(ctxTotal)}]`)) + ` ${c.d('Ctx')} ${renderBar(ctxPct)} ${ctxPct.toFixed(0)}%`);
 
-  // Refresh quip (await API call — only runs when cache expired)
+  // Regenerate quip prompt with fresh context, then refresh if cache expired
+  try { execSync(`node "${path.join(HOME, '.claude', 'scripts', 'buddy', 'quip.mjs')}"`, { timeout: 5000 }); } catch {}
   await refreshQuip();
   // Line 2: Quota
   if (baseDomain && authToken) {
