@@ -371,7 +371,7 @@ function buildPrompt() {
     prompt = L.prompt.quip(name, species, personality, voice, loreText, situationText);
   }
 
-  return { prompt, isThought };
+  return { prompt, isThought: isInnerThought };
 }
 
 // ---- Main ----
