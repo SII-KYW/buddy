@@ -42,6 +42,10 @@ const LANG = (() => {
   if (loc.startsWith('zh')) return 'zh';
   try { if (Intl.DateTimeFormat().resolvedOptions().locale.startsWith('zh')) return 'zh'; } catch {}
   try { const out = execSync('defaults read -g AppleLocale 2>/dev/null', { encoding: 'utf8', timeout: 2000 }).trim(); if (out.startsWith('zh')) return 'zh'; } catch {}
+  for (const src of ['/etc/default/locale', '/etc/locale.conf']) {
+    try { if (/LANG=.*zh/i.test(fs.readFileSync(src, 'utf8'))) return 'zh'; } catch {}
+  }
+  try { if (/zh/i.test(execSync('locale 2>/dev/null', { encoding: 'utf8', timeout: 2000 }))) return 'zh'; } catch {}
   return 'en';
 })();
 

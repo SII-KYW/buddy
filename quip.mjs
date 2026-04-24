@@ -33,10 +33,21 @@ function getLang() {
     const intl = Intl.DateTimeFormat().resolvedOptions().locale;
     if (intl.startsWith('zh')) return 'zh';
   } catch {}
-  // 4. macOS system language
+  // 4. macOS: AppleLocale
   try {
     const out = execSync('defaults read -g AppleLocale 2>/dev/null', { encoding: 'utf8', timeout: 2000 }).trim();
     if (out.startsWith('zh')) return 'zh';
+  } catch {}
+  // 5. Linux: locale.conf or locale command
+  for (const src of ['/etc/default/locale', '/etc/locale.conf']) {
+    try {
+      const content = fs.readFileSync(src, 'utf8');
+      if (/LANG=.*zh/i.test(content)) return 'zh';
+    } catch {}
+  }
+  try {
+    const out = execSync('locale 2>/dev/null', { encoding: 'utf8', timeout: 2000 });
+    if (/zh/i.test(out)) return 'zh';
   } catch {}
   return 'en';
 }
