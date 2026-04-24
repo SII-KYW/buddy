@@ -357,7 +357,7 @@ function petStatus(ctxPct) {
     let quipPrefix = '';
     let quipSuffix = '';
     try {
-      const mode = fs.readFileSync(path.join(HOME, '.claude', 'buddy', 'quip-mode.txt'), 'utf8').trim();
+      const mode = fs.readFileSync(path.join(HOME, '.claude', 'buddy', 'quip-active-mode.txt'), 'utf8').trim();
       if (mode === 'thought') { quipPrefix = c.m('💭') + ' ('; quipSuffix = ')'; }
     } catch {}
     const quipTag = quip ? `  ${quipPrefix}${c.d(quip)}${quipSuffix}` : '';
@@ -454,7 +454,13 @@ function refreshQuip() {
           let q = (json.content?.[0]?.text || '').trim();
           q = q.replace(/^["'""'']+/, '').replace(/["'""'']+$/, '').replace(/[。！？.!?]+$/, '').trim();
           if (q.length > 50) { const last = q.lastIndexOf(' ', 50); q = q.slice(0, last > 0 ? last : 50).trim(); }
-          if (q) fs.writeFileSync(QUIP_FILE, q);
+          if (q) {
+            fs.writeFileSync(QUIP_FILE, q);
+            try {
+              const mode = fs.readFileSync(path.join(HOME, '.claude', 'buddy', 'quip-mode.txt'), 'utf8').trim();
+              fs.writeFileSync(path.join(HOME, '.claude', 'buddy', 'quip-active-mode.txt'), mode);
+            } catch {}
+          }
         } catch {}
         resolve();
       });
