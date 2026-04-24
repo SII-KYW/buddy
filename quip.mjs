@@ -20,17 +20,29 @@ function loadState() { try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8
 
 // ---- Language Detection ----
 
+const LANG_FILE = path.join(DIR, 'lang.txt');
+
 function getLang() {
+  // 1. Saved language (survives execSync without env vars)
+  try { const s = fs.readFileSync(LANG_FILE, 'utf8').trim(); if (s === 'zh' || s === 'en') return s; } catch {}
+  // 2. Environment variables
   const locale = process.env.LANG || process.env.LC_ALL || process.env.LC_MESSAGES || '';
   if (locale.startsWith('zh')) return 'zh';
+  // 3. Intl locale
   try {
     const intl = Intl.DateTimeFormat().resolvedOptions().locale;
     if (intl.startsWith('zh')) return 'zh';
+  } catch {}
+  // 4. macOS system language
+  try {
+    const out = execSync('defaults read -g AppleLocale 2>/dev/null', { encoding: 'utf8', timeout: 2000 }).trim();
+    if (out.startsWith('zh')) return 'zh';
   } catch {}
   return 'en';
 }
 
 const LANG = getLang();
+try { fs.writeFileSync(LANG_FILE, LANG); } catch {}
 
 // ---- Locale Data ----
 

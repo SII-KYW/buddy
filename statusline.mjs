@@ -35,10 +35,13 @@ if (baseUrl) {
 const isGLM = messagesUrl?.hostname?.includes('bigmodel');
 
 // ---- i18n ----
+const LANG_FILE = path.join(HOME, '.claude', 'buddy', 'lang.txt');
 const LANG = (() => {
+  try { const s = fs.readFileSync(LANG_FILE, 'utf8').trim(); if (s === 'zh' || s === 'en') return s; } catch {}
   const loc = process.env.LANG || process.env.LC_ALL || '';
   if (loc.startsWith('zh')) return 'zh';
   try { if (Intl.DateTimeFormat().resolvedOptions().locale.startsWith('zh')) return 'zh'; } catch {}
+  try { const out = execSync('defaults read -g AppleLocale 2>/dev/null', { encoding: 'utf8', timeout: 2000 }).trim(); if (out.startsWith('zh')) return 'zh'; } catch {}
   return 'en';
 })();
 
