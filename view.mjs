@@ -101,14 +101,38 @@ const C = {
 };
 
 const c = (color, s) => `${C[color]}${s}${C.reset}`;
+
+// Terminal display width: CJK/emoji = 2 columns, ASCII = 1
+function termWidth(str) {
+  let w = 0;
+  for (const ch of str) {
+    const cp = ch.codePointAt(0);
+    if (cp <= 0x1F) { w += 0; continue; } // control chars
+    if (cp >= 0x1F300 && cp <= 0x1FAFF) { w += 2; continue; } // emoji
+    if (cp >= 0x2600 && cp <= 0x27BF) { w += 2; continue; } // misc symbols
+    if (cp >= 0x2000 && cp <= 0x206F) { w += 0; continue; } // zero-width
+    if (cp >= 0xFE00 && cp <= 0xFE0F) { w += 0; continue; } // variation selectors
+    if (cp >= 0x300 && cp <= 0x36F) { w += 0; continue; } // combining
+    if ((cp >= 0x1100 && cp <= 0x115F) || (cp >= 0x2E80 && cp <= 0xA4CF) ||
+        (cp >= 0xAC00 && cp <= 0xD7AF) || (cp >= 0xF900 && cp <= 0xFAFF) ||
+        (cp >= 0xFE30 && cp <= 0xFE6F) || (cp >= 0xFF01 && cp <= 0xFF60) ||
+        (cp >= 0x20000 && cp <= 0x2FFFF)) {
+      w += 2; // CJK
+    } else {
+      w += 1;
+    }
+  }
+  return w;
+}
+
+function visLen(s) { return termWidth(s.replace(/\x1b\[[0-9;]*m/g, '')); }
+
 const pad = (s, w, ch = ' ') => {
-  const stripped = s.replace(/\x1b\[[0-9;]*m/g, '');
-  const diff = w - [...stripped].length;
-  return diff > 0 ? s + ch.repeat(diff) : s.slice(0, s.length + diff) ;
+  const diff = w - visLen(s);
+  return diff > 0 ? s + ch.repeat(diff) : s;
 };
 const center = (s, w) => {
-  const stripped = s.replace(/\x1b\[[0-9;]*m/g, '');
-  const len = [...stripped].length;
+  const len = visLen(s);
   const left = Math.floor((w - len) / 2);
   return ' '.repeat(Math.max(0, left)) + s;
 };
@@ -126,13 +150,23 @@ function xpBar(current, needed, width = 16) {
   return c('cyan', '▓'.repeat(filled) + '░'.repeat(width - filled));
 }
 
-function wrapText(text, maxWidth) {
+function wrapText(text, maxCols) {
   if (!text) return [];
   const chars = [...text];
   const lines = [];
-  for (let i = 0; i < chars.length; i += maxWidth) {
-    lines.push(chars.slice(i, i + maxWidth).join(''));
+  let line = [];
+  let col = 0;
+  for (const ch of chars) {
+    const cw = termWidth(ch);
+    if (col + cw > maxCols && line.length > 0) {
+      lines.push(line.join(''));
+      line = [];
+      col = 0;
+    }
+    line.push(ch);
+    col += cw;
   }
+  if (line.length) lines.push(line.join(''));
   return lines;
 }
 
@@ -235,20 +269,20 @@ function render(state, ctxPct, gitInfo) {
 
   rows.push(empty());
 
-  // Background story — wrap with proper width, account for "📖 " prefix
+  // Background story — "📖 " prefix = 4 cols, "    " continuation = 4 cols
   if (state.background) {
-    const bgW = contentW - 3; // "📖 " takes ~3 chars
+    const bgW = W - 2 - 4; // line width minus prefix
     const bgLines = wrapText(state.background, bgW);
     rows.push(line(c('dim', ` 📖 ${bgLines[0]}`)));
-    for (let i = 1; i < bgLines.length && i < 4; i++) {
+    for (let i = 1; i < bgLines.length && i < 5; i++) {
       rows.push(line(c('dim', `    ${bgLines[i]}`)));
     }
   }
   if (state.personalityDetail) {
-    const pdW = contentW - 3;
+    const pdW = W - 2 - 4;
     const pdLines = wrapText(state.personalityDetail, pdW);
     rows.push(line(c('dim', ` 🎭 ${pdLines[0]}`)));
-    for (let i = 1; i < pdLines.length && i < 3; i++) {
+    for (let i = 1; i < pdLines.length && i < 4; i++) {
       rows.push(line(c('dim', `    ${pdLines[i]}`)));
     }
   }
