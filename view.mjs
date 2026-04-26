@@ -19,6 +19,7 @@ import {
   getContextualThought, getXpProgress, getLevelTitle, xpForLevel,
   PERSONALITY_LABELS, getPetResponse, trackSession, trackCommit,
   trackPush, trackFileChanges, trackContextGrowth,
+  getEmoji, applyBuffs, interact, notify, getNotification, checkAchievements,
 } from './pet-engine.mjs';
 
 const W = 52; // Dashboard width
@@ -72,6 +73,22 @@ function wrapText(text, maxWidth) {
   return lines;
 }
 
+function rainbowText(text, level) {
+  if (level < 10) return c('magenta', text);
+  const palettes = [
+    [213, 216, 122],
+    [213, 216, 122, 117, 153],
+    [213, 216, 122, 117, 153, 183, 217],
+  ];
+  const tier = level >= 20 ? 2 : level >= 15 ? 1 : 0;
+  const colors = palettes[tier];
+  const shift = Math.floor(Date.now() / 400) % colors.length;
+  return Array.from(text).map((ch, i) => {
+    const ci = (i + shift) % colors.length;
+    return `\x1b[38;5;${colors[ci]}m${ch}\x1b[0m`;
+  }).join('');
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Event log (in-memory, recent events)
 // ═══════════════════════════════════════════════════════════════════
@@ -112,8 +129,9 @@ function render(state, ctxPct, gitInfo) {
 
   // Header
   const shiny = state.shiny ? c('magenta', ' ✨SHINY✨') : '';
-  const emoji = species.emoji;
-  rows.push(line(c('bold', ` ${emoji} ${state.name}${shiny}  —  ${PERSONALITY_LABELS[state.personality] || state.personality}`)));
+  const emoji = getEmoji(state.species, level);
+  const petName = rainbowText(`${emoji} ${state.name}${shiny}`, level);
+  rows.push(line(` ${petName}  —  ${PERSONALITY_LABELS[state.personality] || state.personality}`));
   rows.push(line(c('dim', ` ${age}  |  Session: ${sessTime}  |  Streak: ${state.streak || 1}d`)));
   rows.push(line(c('dim', ` Lv.${level} ${c('yellow', getLevelTitle(level))}  ${xpBar(xpInfo.current, xpInfo.needed)}  ${xpInfo.current}/${xpInfo.needed} XP`)));
 
@@ -209,38 +227,8 @@ let lastAheadCount = -1;
 let resetConfirm = false;
 
 function update() {
-  const state = loadState();
-  if (!state) {
-    clearAndDraw(['', '', '  No pet yet! Press [h] to hatch one.']);
-    return;
-  }
-
-  const git = getGitInfo();
-  let save = false;
-
-  // Detect new commits
-  if (git.hash && git.hash !== lastCommitHash) {
-    if (lastCommitHash) addEvent(c('green', `Commit ${git.hash} (+15xp)`));
-    lastCommitHash = git.hash;
-    save = true;
-  }
-
-  // Detect pushes
-  if (git.inRepo && lastAheadCount >= 0) {
-    if (lastAheadCount > 0 && git.ahead === 0) {
-      addEvent(c('cyan', 'Pushed to remote! (+10xp)'));
-    }
-  }
-  lastAheadCount = git.ahead;
-
-  // Estimate context from session time (we don't have stdin here)
-  const sessionMin = (Date.now() - (state.lastSessionStart || state.born)) / 60000;
-  const ctxPct = Math.min(95, sessionMin * 0.5);
-
-  if (save) saveState(state);
-
-  const rows = render(state, ctxPct, git);
-  clearAndDraw(rows);
+  dataRefresh();
+  animFrame();
 }
 
 // Keyboard
@@ -305,6 +293,47 @@ const cleanup = () => {
 process.on('SIGTERM', cleanup);
 process.on('SIGINT', cleanup);
 
-// Initial draw + auto-refresh every 5s
-update();
-setInterval(update, 5000);
+// Cached data for animation frames (avoid heavy git/exec every 400ms)
+let cachedState = null;
+let cachedGit = null;
+let cachedCtxPct = 0;
+let lastDataRefresh = 0;
+
+function dataRefresh() {
+  cachedState = loadState();
+  cachedGit = getGitInfo();
+  if (cachedState) {
+    const sessionMin = (Date.now() - (cachedState.lastSessionStart || cachedState.born)) / 60000;
+    cachedCtxPct = Math.min(95, sessionMin * 0.5);
+  }
+  lastDataRefresh = Date.now();
+  // Detect events
+  if (cachedGit?.hash && cachedGit.hash !== lastCommitHash) {
+    if (lastCommitHash) addEvent(c('green', `Commit ${cachedGit.hash} (+15xp)`));
+    lastCommitHash = cachedGit.hash;
+  }
+  if (cachedGit?.inRepo && lastAheadCount >= 0 && lastAheadCount > 0 && cachedGit.ahead === 0) {
+    addEvent(c('cyan', 'Pushed to remote! (+10xp)'));
+  }
+  if (cachedGit) lastAheadCount = cachedGit.ahead;
+}
+
+function animFrame() {
+  if (!cachedState) return;
+  const rows = render(cachedState, cachedCtxPct, cachedGit);
+  clearAndDraw(rows);
+}
+
+// Initial
+dataRefresh();
+animFrame();
+
+// Heavy data refresh every 5s
+setInterval(dataRefresh, 5000);
+
+// Light animation frame every 400ms (rainbow color shift)
+setInterval(animFrame, 400);
+
+// Full data refresh every 5s (git, stats, etc.)
+// Already handled by animFrame calling update(), but keep slower
+// git polling separate to avoid excessive execSync calls

@@ -27,24 +27,24 @@ const GIT_CACHE_TTL = 20_000;
 // ═══════════════════════════════════════════════════════════════════
 
 export const SPECIES = [
-  { id: 'cat',     emoji: '🐱', label: 'Cat' },
-  { id: 'dog',     emoji: '🐕', label: 'Dog' },
-  { id: 'rabbit',  emoji: '🐰', label: 'Rabbit' },
-  { id: 'hamster', emoji: '🐹', label: 'Hamster' },
-  { id: 'bird',    emoji: '🐦', label: 'Bird' },
-  { id: 'fish',    emoji: '🐟', label: 'Fish' },
-  { id: 'turtle',  emoji: '🐢', label: 'Turtle' },
-  { id: 'snake',   emoji: '🐍', label: 'Snake' },
-  { id: 'frog',    emoji: '🐸', label: 'Frog' },
-  { id: 'bear',    emoji: '🐻', label: 'Bear' },
-  { id: 'fox',     emoji: '🦊', label: 'Fox' },
-  { id: 'penguin', emoji: '🐧', label: 'Penguin' },
-  { id: 'owl',     emoji: '🦉', label: 'Owl' },
-  { id: 'dragon',  emoji: '🐉', label: 'Dragon' },
-  { id: 'ghost',   emoji: '👻', label: 'Ghost' },
-  { id: 'robot',   emoji: '🤖', label: 'Robot' },
-  { id: 'alien',   emoji: '👾', label: 'Alien' },
-  { id: 'star',    emoji: '⭐', label: 'Star' },
+  { id: 'cat',     emoji: ['🐱','🐈','🦁'], label: 'Cat' },
+  { id: 'dog',     emoji: ['🐶','🐕','🐺'], label: 'Dog' },
+  { id: 'rabbit',  emoji: ['🐰','🐇','🥚'], label: 'Rabbit' },
+  { id: 'hamster', emoji: ['🐹','🐿️','🦫'], label: 'Hamster' },
+  { id: 'bird',    emoji: ['🐣','🐦','🦅'], label: 'Bird' },
+  { id: 'fish',    emoji: ['🐟','🐠','🐋'], label: 'Fish' },
+  { id: 'turtle',  emoji: ['🐢','🦎','🐲'], label: 'Turtle' },
+  { id: 'snake',   emoji: ['🐍','🪱','🐲'], label: 'Snake' },
+  { id: 'frog',    emoji: ['🐸','🪷','👑'], label: 'Frog' },
+  { id: 'bear',    emoji: ['🐻','🧸','💪'], label: 'Bear' },
+  { id: 'fox',     emoji: ['🦊','🌸','🔥'], label: 'Fox' },
+  { id: 'penguin', emoji: ['🐧','🧊','❄️'], label: 'Penguin' },
+  { id: 'owl',     emoji: ['🦉','📚','🔮'], label: 'Owl' },
+  { id: 'dragon',  emoji: ['🐉','🐲','🔥'], label: 'Dragon' },
+  { id: 'ghost',   emoji: ['👻','💀','☠️'], label: 'Ghost' },
+  { id: 'robot',   emoji: ['🤖','🦾','🧠'], label: 'Robot' },
+  { id: 'alien',   emoji: ['👽','👾','🛸'], label: 'Alien' },
+  { id: 'star',    emoji: ['⭐','🌟','💫'], label: 'Star' },
 ];
 
 export const NAMES = [
@@ -127,6 +127,99 @@ export function loadState() {
 export function saveState(state) {
   if (!fs.existsSync(STATE_DIR)) fs.mkdirSync(STATE_DIR, { recursive: true });
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Notification System
+// ═══════════════════════════════════════════════════════════════════
+
+const NOTIF_FILE = path.join(STATE_DIR, 'notification.json');
+
+export function notify(text, title = 'Buddy') {
+  // Write notification file (TTL 120s for statusline display)
+  try {
+    fs.writeFileSync(NOTIF_FILE, JSON.stringify({ text, title, ts: Date.now() }));
+  } catch {}
+  // macOS / Linux system notification
+  try {
+    if (process.platform === 'darwin') {
+      execSync(`osascript -e 'display notification "${text.replace(/"/g, '\\"')}" with title "${title}"'`, { timeout: 3000 });
+    } else {
+      execSync(`notify-send "${title}" "${text.replace(/"/g, '\\"')}"`, { timeout: 3000 });
+    }
+  } catch {}
+}
+
+export function getNotification() {
+  try {
+    const n = JSON.parse(fs.readFileSync(NOTIF_FILE, 'utf8'));
+    if (Date.now() - n.ts < 120_000) return n;
+  } catch {}
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Achievement System
+// ═══════════════════════════════════════════════════════════════════
+
+export const ACHIEVEMENTS = [
+  { id: 'first_commit',  name: 'Hello Git',       icon: '🎯', desc: 'First commit detected' },
+  { id: 'night_owl',     name: 'Night Owl',        icon: '🦉', desc: 'Coded past 2am' },
+  { id: 'early_bird',    name: 'Early Bird',       icon: '🌅', desc: 'Session started before 7am' },
+  { id: 'streak_3',      name: 'On a Roll',        icon: '🔥', desc: '3-day coding streak' },
+  { id: 'streak_7',      name: 'Weekly Warrior',   icon: '⚔️', desc: '7-day coding streak' },
+  { id: 'streak_30',     name: 'Unstoppable',      icon: '💎', desc: '30-day coding streak' },
+  { id: 'level_5',       name: 'Growing Up',       icon: '🌱', desc: 'Reached Lv5' },
+  { id: 'level_10',      name: 'Double Digits',    icon: '🎖️', desc: 'Reached Lv10' },
+  { id: 'level_20',      name: 'Veteran',          icon: '⭐', desc: 'Reached Lv20' },
+  { id: 'commits_10',    name: 'Committer',        icon: '📝', desc: '10 total commits' },
+  { id: 'commits_50',    name: 'Git Legend',        icon: '🏆', desc: '50 total commits' },
+  { id: 'files_50',      name: 'Busy Fingers',     icon: '⌨️', desc: 'Touched 50 files' },
+  { id: 'files_200',     name: 'Code Machine',     icon: '🤖', desc: 'Touched 200 files' },
+  { id: 'compact_5',     name: 'Compacted',        icon: '♻️', desc: 'Survived 5 context compactions' },
+  { id: 'push_5',        name: 'Ship It',          icon: '🚀', desc: '5 total pushes' },
+  { id: 'marathon',      name: 'Marathon',         icon: '🏃', desc: '4+ hour coding session' },
+  { id: 'clean_slate',   name: 'Clean Slate',      icon: '✨', desc: 'Cleaned up after 10+ dirty files' },
+  { id: 'shiny_hatch',   name: 'Shiny!',           icon: '✨', desc: 'Hatched a rare shiny pet' },
+];
+
+export function checkAchievements(state) {
+  if (!state) return [];
+  const firstRun = !state.achievements;
+  state.achievements = state.achievements || [];
+  state.totalCompactions = state.totalCompactions || 0;
+  const unlocked = [];
+  const has = id => state.achievements.includes(id);
+
+  const checks = {
+    first_commit: () => (state.totalCommits || 0) >= 1,
+    night_owl:    () => new Date().getHours() >= 2 && new Date().getHours() < 5,
+    early_bird:   () => new Date().getHours() >= 5 && new Date().getHours() < 7,
+    streak_3:     () => (state.streak || 0) >= 3,
+    streak_7:     () => (state.streak || 0) >= 7,
+    streak_30:    () => (state.streak || 0) >= 30,
+    level_5:      () => (state.level || 1) >= 5,
+    level_10:     () => (state.level || 1) >= 10,
+    level_20:     () => (state.level || 1) >= 20,
+    commits_10:   () => (state.totalCommits || 0) >= 10,
+    commits_50:   () => (state.totalCommits || 0) >= 50,
+    files_50:     () => (state.filesTouched || 0) >= 50,
+    files_200:    () => (state.filesTouched || 0) >= 200,
+    compact_5:    () => (state.totalCompactions || 0) >= 5,
+    push_5:       () => (state.totalPushes || 0) >= 5,
+    marathon:     () => (Date.now() - (state.lastSessionStart || state.born)) > 4 * 3600000,
+    clean_slate:  () => (state.lastCleanBonus || 0) >= 1,
+    shiny_hatch:  () => state.shiny === true,
+  };
+
+  for (const a of ACHIEVEMENTS) {
+    if (!has(a.id) && checks[a.id] && checks[a.id]()) {
+      state.achievements.push(a.id);
+      // Only notify on NEW unlocks, not retroactive ones from first run
+      if (!firstRun) unlocked.push(a);
+    }
+  }
+  return unlocked;
 }
 
 export function hatched() { return fs.existsSync(STATE_FILE); }
@@ -281,14 +374,18 @@ export function getGitInfo() {
 // ═══════════════════════════════════════════════════════════════════
 
 export function computeStats(state, ctxPct, gitInfo) {
+  const lv = state.level || 1;
+
+  // Level bonuses: energy decays slower, happiness floor higher
+  const energyDecayRate = Math.max(0.15, 0.4 - lv * 0.01);  // Lv25 → 0.15
+  const happyFloor = Math.min(30, Math.floor(lv * 1.5));      // Lv20 → 30
+
   // Hunger: inverse of context window usage
-  // Context 0% → 100 (full), Context 80%+ → starving
   const hunger = Math.round(Math.max(5, 100 - ctxPct * 1.15));
 
   // Energy: session freshness (decays over time)
   const sessionMin = (Date.now() - (state.lastSessionStart || state.born)) / 60000;
-  // ~4h to reach 5% energy
-  const energy = Math.round(Math.max(5, 100 - sessionMin * 0.4));
+  const energy = Math.round(Math.max(5, 100 - sessionMin * energyDecayRate));
 
   // Cleanliness: git working tree
   const dirtyFiles = gitInfo?.dirty || 0;
@@ -296,11 +393,11 @@ export function computeStats(state, ctxPct, gitInfo) {
     ? Math.round(Math.max(5, 100 - dirtyFiles * 6))
     : 100;
 
-  // Happiness: weighted composite
-  const happiness = Math.round(
+  // Happiness: weighted composite + level floor
+  const happiness = Math.max(happyFloor, Math.round(
     hunger * 0.3 + energy * 0.3 + cleanliness * 0.25 +
     Math.min(15, (state.streak || 1) * 3)
-  );
+  ));
 
   return { hunger, happiness, energy, cleanliness };
 }
@@ -412,11 +509,49 @@ function gainXP(state, amount) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Interactive Actions
+// ═══════════════════════════════════════════════════════════════════
+
+const ACTIONS = {
+  pet:  { icon: '🐾', xp: 3,  buff: 'happiness', amount: 15, duration: 300_000 },
+  feed: { icon: '🍖', xp: 2,  buff: 'hunger',    amount: 20, duration: 300_000 },
+  play: { icon: '⚽', xp: 2,  buff: 'energy',     amount: 15, duration: 300_000 },
+};
+
+export function interact(state, action) {
+  const def = ACTIONS[action];
+  if (!def) return null;
+  state.buffs = state.buffs || {};
+  state.buffs[def.buff] = { amount: def.amount, until: Date.now() + def.duration };
+  gainXP(state, def.xp);
+  return def;
+}
+
+export function applyBuffs(stats, state) {
+  if (!state.buffs) return stats;
+  const now = Date.now();
+  for (const [key, buff] of Object.entries(state.buffs)) {
+    if (now < buff.until && stats[key] !== undefined) {
+      stats[key] = Math.min(100, stats[key] + buff.amount);
+    }
+  }
+  // Clean expired
+  for (const key of Object.keys(state.buffs)) {
+    if (now >= state.buffs[key].until) delete state.buffs[key];
+  }
+  return stats;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Mood, Effects, Thoughts
 // ═══════════════════════════════════════════════════════════════════
 
-export function getMood(stats) {
-  const avg = (stats.hunger + stats.happiness + stats.energy + stats.cleanliness) / 4;
+export function getMood(stats, errorCount = 0) {
+  let avg = (stats.hunger + stats.happiness + stats.energy + stats.cleanliness) / 4;
+  // Errors drag mood down
+  if (errorCount >= 5) avg -= 20;
+  else if (errorCount >= 2) avg -= 10;
+  avg = Math.max(0, avg);
   if (avg > 85) return 'ecstatic';
   if (avg > 65) return 'happy';
   if (avg > 45) return 'content';
@@ -443,6 +578,15 @@ export function getStatusEffects(stats) {
 
 export function getSpeciesDef(id) {
   return SPECIES.find(s => s.id === id) || SPECIES[0];
+}
+
+export function getEmoji(id, level) {
+  const def = getSpeciesDef(id);
+  const e = def.emoji;
+  if (!Array.isArray(e)) return e;
+  if (level >= 20) return e[2];
+  if (level >= 10) return e[1];
+  return e[0];
 }
 
 export function getArt(state, mood) {

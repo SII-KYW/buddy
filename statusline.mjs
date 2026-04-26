@@ -14,6 +14,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { execSync } from 'child_process';
+import { getEmoji, checkAchievements, notify, getNotification, interact, applyBuffs } from './pet-engine.mjs';
 
 const HOME = os.homedir();
 const BUDDY_STATE = path.join(HOME, '.claude', 'buddy', 'state.json');
@@ -338,6 +339,14 @@ function petStatus(ctxPct) {
     }
     delete state._leveledUp;
 
+    // Achievement check
+    const newAchievements = checkAchievements(state);
+    if (newAchievements.length > 0) {
+      const a = newAchievements[0];
+      notify(`${a.icon} ${a.name} — ${a.desc}`, `${state.name} Achievement!`);
+      fs.writeFileSync(BUDDY_STATE, JSON.stringify(state, null, 2));
+    }
+
     // Auto-compute stats
     const hunger = Math.round(Math.max(5, 100 - ctxPct * 1.15));
     const sessionMin = (now - (state.lastSessionStart || state.born)) / 60000;
@@ -347,7 +356,10 @@ function petStatus(ctxPct) {
     const sessionDirt = Math.min(20, (state.totalSessions || 0) * 3);
     const fileDirt = Math.min(15, Math.floor((state.filesTouched || 0) / 5));
     const cleanliness = Math.round(Math.max(5, 100 - errorDirt - sessionDirt - fileDirt));
-    const happiness = Math.round(hunger * 0.3 + energy * 0.3 + cleanliness * 0.25 + Math.min(15, (state.streak || 1) * 3));
+    let happiness = Math.round(hunger * 0.3 + energy * 0.3 + cleanliness * 0.25 + Math.min(15, (state.streak || 1) * 3));
+
+    // Apply buffs from interactions
+    const stats = applyBuffs({ hunger, happiness, energy, cleanliness }, state);
 
     const SPECIES_ARR = ['cat','dog','rabbit','hamster','bird','fish','turtle','snake','frog','bear','fox','penguin','owl','dragon','ghost','robot','alien','star'];
     const EMOJI_ARR = ['🐱','🐕','🐰','🐹','🐦','🐟','🐢','🐍','🐸','🐻','🦊','🐧','🦉','🐉','👻','🤖','👾','⭐'];
@@ -356,33 +368,54 @@ function petStatus(ctxPct) {
     const shiny = state.shiny ? '✨' : '';
     const level = state.level || 1;
 
-    const cleanTag = cleanliness < 50 ? ` ${c[col(cleanliness)]('🛁' + cleanliness)}` : '';
+    const cleanTag = stats.cleanliness < 50 ? ` ${c[col(stats.cleanliness)]('🛁' + stats.cleanliness)}` : '';
 
-    return { name: state.name, species: state.species, shiny: state.shiny, level, happiness, hunger, energy, cleanliness };
+    return { name: state.name, species: state.species, shiny: state.shiny, level, happiness: stats.happiness, hunger: stats.hunger, energy: stats.energy, cleanliness: stats.cleanliness };
   } catch {
     return null;
   }
 }
 
+function rainbowName(text, level) {
+  if (level < 10) return c.m(text);
+  const palettes = [
+    [213, 216, 122],                          // Lv10-14: pink → gold → lime
+    [213, 216, 122, 117, 153],                // Lv15-19: + mint, lavender
+    [213, 216, 122, 117, 153, 183, 217],      // Lv20+: + sky, peach
+  ];
+  const tier = level >= 20 ? 2 : level >= 15 ? 1 : 0;
+  const colors = palettes[tier];
+  const shift = Math.floor(Date.now() / 800) % colors.length;
+  return Array.from(text).map((ch, i) => {
+    const ci = (i + shift) % colors.length;
+    return `\x1b[38;5;${colors[ci]}m${ch}\x1b[0m`;
+  }).join('');
+}
+
 function renderPetLine(info) {
   if (!info) return c.d('🐾 no buddy yet');
-  const SPECIES_ARR = ['cat','dog','rabbit','hamster','bird','fish','turtle','snake','frog','bear','fox','penguin','owl','dragon','ghost','robot','alien','star'];
-  const EMOJI_ARR = ['🐱','🐕','🐰','🐹','🐦','🐟','🐢','🐍','🐸','🐻','🦊','🐧','🦉','🐉','👻','🤖','👾','⭐'];
-  const idx = SPECIES_ARR.indexOf(info.species);
-  const emoji = idx >= 0 ? EMOJI_ARR[idx] : '🐾';
+  const emoji = getEmoji(info.species, info.level);
   const shiny = info.shiny ? '✨' : '';
   const cleanTag = info.cleanliness < 50 ? ` ${c[col(info.cleanliness)]('🛁' + info.cleanliness)}` : '';
 
-  let quip = '';
-  try { quip = fs.readFileSync(QUIP_FILE, 'utf8').trim(); } catch {}
-  let quipPrefix = '', quipSuffix = '';
-  try {
-    const mode = fs.readFileSync(path.join(HOME, '.claude', 'buddy', 'quip-active-mode.txt'), 'utf8').trim();
-    if (mode === 'thought') { quipPrefix = c.m('💭') + ' ('; quipSuffix = ')'; }
-  } catch {}
-  const quipTag = quip ? `  ${quipPrefix}${c.d(quip)}${quipSuffix}` : '';
+  // Check for active notification first
+  const notif = getNotification();
+  let quipTag;
+  if (notif) {
+    quipTag = `  ${c.y('🏅 ' + notif.text)}`;
+  } else {
+    let quip = '';
+    try { quip = fs.readFileSync(QUIP_FILE, 'utf8').trim(); } catch {}
+    let quipPrefix = '', quipSuffix = '';
+    try {
+      const mode = fs.readFileSync(path.join(HOME, '.claude', 'buddy', 'quip-active-mode.txt'), 'utf8').trim();
+      if (mode === 'thought') { quipPrefix = c.m('💭') + ' ('; quipSuffix = ')'; }
+    } catch {}
+    quipTag = quip ? `  ${quipPrefix}${c.d(quip)}${quipSuffix}` : '';
+  }
 
-  return `${c.m(shiny + emoji + ' ' + info.name)}${c.d('Lv' + info.level)} ${c[col(info.happiness)]('❤' + info.happiness)} ${c[col(info.hunger)]('🍖' + info.hunger)} ${c[col(info.energy)]('⚡' + info.energy)}${cleanTag}${quipTag}`;
+  const petName = rainbowName(shiny + emoji + ' ' + info.name, info.level);
+  return `${petName}${c.d('-Lv' + info.level)} ${c[col(info.happiness)]('❤️' + info.happiness)} ${c[col(info.hunger)]('🍖' + info.hunger)} ${c[col(info.energy)]('⚡' + info.energy)}${cleanTag}${quipTag}`;
 }
 
 // ---- GLM Quota ----
