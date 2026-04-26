@@ -21,28 +21,90 @@ import {
   trackPush, trackFileChanges, trackContextGrowth,
   getEmoji, applyBuffs, interact, notify, getNotification, checkAchievements,
 } from './pet-engine.mjs';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { execSync } from 'child_process';
 
-const W = 52; // Dashboard width
+const HOME = os.homedir();
+const W = 54; // Dashboard width
+
+// ═══════════════════════════════════════════════════════════════════
+// i18n
+// ═══════════════════════════════════════════════════════════════════
+
+const LANG_FILE = path.join(HOME, '.claude', 'buddy', 'lang.txt');
+const LANG = (() => {
+  try { const s = fs.readFileSync(LANG_FILE, 'utf8').trim(); if (s === 'zh' || s === 'en') return s; } catch {}
+  try { if (Intl.DateTimeFormat().resolvedOptions().locale.startsWith('zh')) return 'zh'; } catch {}
+  return 'en';
+})();
+
+const I = LANG === 'zh' ? {
+  noPet: '还没有宠物！按 [h] 孵化一只',
+  session: '会话', streak: '连续', age: s => `${s}`,
+  mood: '心情',
+  happiness: '幸福度', hunger: '饥饿度', energy: '精力值', clean: '干净度',
+  ctx: '上下文', dirty: '脏文件', noGit: '无git',
+  background: '背景', personality: '性格',
+  thought: name => `${name}的内心`,
+  watching: '正在关注你的编程活动...',
+  commits: '提交', pushes: '推送', files: '文件',
+  keys: '[p]摸摸 [r]刷新 [h]孵化 [x]重置 [q]退出',
+  goodbye: name => `再见！${name}会继续守护你 💚`,
+  hatched: (name, species) => `孵化了 ${name} (${species})！`,
+  generating: '背景故事生成中...',
+  resetConfirm: '再按一次 [x] 确认重置',
+  resetDone: '宠物已重置。按 [h] 孵化新的。',
+  petted: (name, resp) => `你摸了 ${name}：${resp}`,
+  commit: hash => `提交 ${hash} (+15xp)`,
+  pushed: '已推送到远程！(+10xp)',
+  effects: { 'context-heavy': '📚上下文满', 'overtime': '⏰加班', 'messy-repo': '🧹仓库脏', 'in-flow': '🌟心流' },
+  moods: { ecstatic: '🤩 激动', happy: '😊 开心', content: '😐 平静', sad: '😞 低落', angry: '😤 焦虑', critical: '😱 崩溃' },
+  titles: ['新手','小不点','小型','成长中','活泼','精神','强壮','健壮','威猛','辉煌','闪耀','英勇','传奇','神话','永恒','天界','超凡','全能','神圣','至尊'],
+} : {
+  noPet: 'No pet yet! Press [h] to hatch one.',
+  session: 'Session', streak: 'Streak', age: s => s,
+  mood: 'Mood',
+  happiness: 'Happiness', hunger: 'Hunger', energy: 'Energy', clean: 'Clean',
+  ctx: 'ctx', dirty: 'dirty', noGit: 'no git',
+  background: 'Background', personality: 'Personality',
+  thought: name => `${name}'s inner world`,
+  watching: 'Watching your coding activity...',
+  commits: 'Commits', pushes: 'Pushes', files: 'Files',
+  keys: '[p]pet [r]efresh [h]atch [x]reset [q]uit',
+  goodbye: name => `Goodbye! ${name} will keep watching. 💚`,
+  hatched: (name, species) => `Hatched ${name} the ${species}!`,
+  generating: 'Background story generating...',
+  resetConfirm: 'Press [x] again to confirm reset',
+  resetDone: 'Pet reset. Press [h] to hatch a new one.',
+  petted: (name, resp) => `You pet ${name}: ${resp}`,
+  commit: hash => `Commit ${hash} (+15xp)`,
+  pushed: 'Pushed to remote! (+10xp)',
+  effects: { 'context-heavy': '📚ctx-heavy', 'overtime': '⏰overtime', 'messy-repo': '🧹messy', 'in-flow': '🌟in-flow' },
+  moods: { ecstatic: '🤩 ecstatic', happy: '😊 happy', content: '😐 content', sad: '😞 sad', angry: '😤 stressed', critical: '😱 critical' },
+  titles: LEVEL_TITLES,
+};
+
+function getMoodText(mood) { return I.moods[mood] || I.moods.content; }
+function getTitleText(level) { return I.titles[Math.min(level - 1, I.titles.length - 1)]; }
 
 // ═══════════════════════════════════════════════════════════════════
 // ANSI helpers
 // ═══════════════════════════════════════════════════════════════════
 
-const ESC = '\x1b[';
 const C = {
   reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m',
   black: '\x1b[30m', red: '\x1b[31m', green: '\x1b[32m',
   yellow: '\x1b[33m', blue: '\x1b[34m', magenta: '\x1b[35m',
   cyan: '\x1b[36m', white: '\x1b[37m',
-  bgBlack: '\x1b[40m', bgBlue: '\x1b[44m', bgMagenta: '\x1b[45m',
 };
 
 const c = (color, s) => `${C[color]}${s}${C.reset}`;
 const pad = (s, w, ch = ' ') => {
-  // Strip ANSI for width calculation
   const stripped = s.replace(/\x1b\[[0-9;]*m/g, '');
   const diff = w - [...stripped].length;
-  return diff > 0 ? s + ch.repeat(diff) : s;
+  return diff > 0 ? s + ch.repeat(diff) : s.slice(0, s.length + diff) ;
 };
 const center = (s, w) => {
   const stripped = s.replace(/\x1b\[[0-9;]*m/g, '');
@@ -65,6 +127,7 @@ function xpBar(current, needed, width = 16) {
 }
 
 function wrapText(text, maxWidth) {
+  if (!text) return [];
   const chars = [...text];
   const lines = [];
   for (let i = 0; i < chars.length; i += maxWidth) {
@@ -82,7 +145,7 @@ function rainbowText(text, level) {
   ];
   const tier = level >= 20 ? 2 : level >= 15 ? 1 : 0;
   const colors = palettes[tier];
-  const shift = Math.floor(Date.now() / 400) % colors.length;
+  const shift = Math.floor(Date.now() / 300) % colors.length;
   return Array.from(text).map((ch, i) => {
     const ci = (i + shift) % colors.length;
     return `\x1b[38;5;${colors[ci]}m${ch}\x1b[0m`;
@@ -90,11 +153,13 @@ function rainbowText(text, level) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Event log (in-memory, recent events)
+// Event log + cached thought
 // ═══════════════════════════════════════════════════════════════════
 
 const eventLog = [];
 const MAX_EVENTS = 5;
+let cachedThought = '';
+let thoughtTime = 0;
 
 function addEvent(msg) {
   const ts = new Date().toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' });
@@ -102,27 +167,36 @@ function addEvent(msg) {
   if (eventLog.length > MAX_EVENTS) eventLog.pop();
 }
 
+function getThought(state, stats, gitInfo) {
+  const now = Date.now();
+  if (!cachedThought || now - thoughtTime > 60000) {
+    cachedThought = getContextualThought(state, stats, gitInfo);
+    thoughtTime = now;
+  }
+  return cachedThought;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Rendering
 // ═══════════════════════════════════════════════════════════════════
 
 function render(state, ctxPct, gitInfo) {
-  if (!state) return ['No pet yet. Press [h] to hatch!'];
+  if (!state) return [I.noPet];
 
   const stats = computeStats(state, ctxPct, gitInfo);
   const mood = getMood(stats);
   const effects = getStatusEffects(stats);
-  const species = getSpeciesDef(state.species);
   const art = getArt(state, mood);
   const xpInfo = getXpProgress(state);
   const level = state.level || 1;
   const age = formatAge(state.born);
   const sessTime = formatSessionTime(state);
-  const thought = getContextualThought(state, stats, gitInfo);
+  const thought = getThought(state, stats, gitInfo);
   const line = (s) => '║ ' + pad(s, W - 2) + ' ║';
   const empty = () => line('');
 
   const rows = [];
+  const contentW = W - 4; // usable width inside borders (excluding "║ " and " ║")
 
   // Top border
   rows.push('╔' + '═'.repeat(W - 2) + '╗');
@@ -132,8 +206,8 @@ function render(state, ctxPct, gitInfo) {
   const emoji = getEmoji(state.species, level);
   const petName = rainbowText(`${emoji} ${state.name}${shiny}`, level);
   rows.push(line(` ${petName}  —  ${PERSONALITY_LABELS[state.personality] || state.personality}`));
-  rows.push(line(c('dim', ` ${age}  |  Session: ${sessTime}  |  Streak: ${state.streak || 1}d`)));
-  rows.push(line(c('dim', ` Lv.${level} ${c('yellow', getLevelTitle(level))}  ${xpBar(xpInfo.current, xpInfo.needed)}  ${xpInfo.current}/${xpInfo.needed} XP`)));
+  rows.push(line(c('dim', ` ${age}  |  ${I.session}: ${sessTime}  |  ${I.streak}: ${state.streak || 1}d`)));
+  rows.push(line(c('dim', ` Lv.${level} ${c('yellow', getTitleText(level))}  ${xpBar(xpInfo.current, xpInfo.needed)}  ${xpInfo.current}/${xpInfo.needed} XP`)));
 
   rows.push('╟' + '─'.repeat(W - 2) + '╢');
 
@@ -145,43 +219,42 @@ function render(state, ctxPct, gitInfo) {
   rows.push(empty());
 
   // Mood
-  rows.push(line(` Mood: ${getMoodLabel(mood)}`));
+  rows.push(line(` ${I.mood}: ${getMoodText(mood)}`));
 
-  // Stats with real context
+  // Stats — fixed layout: emoji + label(8ch) + bar(16ch) + value(4ch) + hint
   const h = stats.hunger, hp = stats.happiness, e = stats.energy, cl = stats.cleanliness;
-  rows.push(line(` ${c('red','❤')} Happiness  ${statBar(hp)} ${c('bold', hp+'%')}`));
-  rows.push(line(` ${c('yellow','🍖')} Hunger     ${statBar(h)} ${c('bold', h+'%')}  ${c('dim', `ctx ${Math.round(ctxPct)}%`)}`));
-  rows.push(line(` ${c('blue','⚡')} Energy     ${statBar(e)} ${c('bold', e+'%')}  ${c('dim', sessTime)}`));
-  rows.push(line(` ${c('cyan','🛁')} Clean      ${statBar(cl)} ${c('bold', cl+'%')}  ${c('dim', gitInfo?.inRepo ? `${gitInfo.dirty} dirty` : 'no git')}`));
+  rows.push(line(` ${c('red','❤')} ${LANG === 'zh' ? '幸福度' : 'Happiness'}  ${statBar(hp)} ${c('bold', String(hp).padStart(3)+'%')}`));
+  rows.push(line(` ${c('yellow','🍖')} ${LANG === 'zh' ? '饥饿度' : 'Hunger   '}  ${statBar(h)} ${c('bold', String(h).padStart(3)+'%')}  ${c('dim', `${I.ctx} ${Math.round(ctxPct)}%`)}`));
+  rows.push(line(` ${c('blue','⚡')} ${LANG === 'zh' ? '精力值' : 'Energy   '}  ${statBar(e)} ${c('bold', String(e).padStart(3)+'%')}  ${c('dim', sessTime)}`));
+  rows.push(line(` ${c('cyan','🛁')} ${LANG === 'zh' ? '干净度' : 'Clean    '}  ${statBar(cl)} ${c('bold', String(cl).padStart(3)+'%')}  ${c('dim', gitInfo?.inRepo ? `${gitInfo.dirty} ${I.dirty}` : I.noGit)}`));
 
   // Status effects
   if (effects.length > 0) {
-    const icons = {
-      'context-heavy': c('red', '📚ctx-heavy'), 'overtime': c('blue', '⏰overtime'),
-      'messy-repo': c('yellow', '🧹messy'), 'in-flow': c('green', '🌟in-flow'),
-    };
-    rows.push(line(' ' + effects.map(e => icons[e] || e).join('  ')));
+    rows.push(line(' ' + effects.map(e => I.effects[e] || e).join('  ')));
   }
 
   rows.push(empty());
 
-  // Background story + personality detail
+  // Background story — wrap with proper width, account for "📖 " prefix
   if (state.background) {
-    const bgLines = wrapText(state.background, W - 4);
+    const bgW = contentW - 3; // "📖 " takes ~3 chars
+    const bgLines = wrapText(state.background, bgW);
     rows.push(line(c('dim', ` 📖 ${bgLines[0]}`)));
-    for (let i = 1; i < bgLines.length && i < 3; i++) {
+    for (let i = 1; i < bgLines.length && i < 4; i++) {
       rows.push(line(c('dim', `    ${bgLines[i]}`)));
     }
   }
   if (state.personalityDetail) {
-    const pdLines = wrapText(state.personalityDetail, W - 4);
+    const pdW = contentW - 3;
+    const pdLines = wrapText(state.personalityDetail, pdW);
     rows.push(line(c('dim', ` 🎭 ${pdLines[0]}`)));
-    for (let i = 1; i < pdLines.length && i < 2; i++) {
+    for (let i = 1; i < pdLines.length && i < 3; i++) {
       rows.push(line(c('dim', `    ${pdLines[i]}`)));
     }
   }
 
-  // Thought bubble
+  // Thought bubble (cached for 60s)
+  rows.push(empty());
   rows.push(line(c('dim', ` 💭 ${state.name} ${thought}`)));
 
   rows.push('╟' + '─'.repeat(W - 2) + '╢');
@@ -192,14 +265,14 @@ function render(state, ctxPct, gitInfo) {
       rows.push(line(c('dim', ` ${ev}`)));
     }
   } else {
-    rows.push(line(c('dim', ' Watching your coding activity...')));
+    rows.push(line(c('dim', ` ${I.watching}`)));
   }
 
   rows.push('╟' + '─'.repeat(W - 2) + '╢');
 
   // Footer
-  rows.push(line(c('dim', ` Commits: ${state.totalCommits || 0}  Pushes: ${state.totalPushes || 0}  Files: ${state.filesTouched || 0}`)));
-  rows.push(line(c('dim', ' [p]pet [r]efresh [h]atch [x]reset [q]uit')));
+  rows.push(line(c('dim', ` ${I.commits}: ${state.totalCommits || 0}  ${I.pushes}: ${state.totalPushes || 0}  ${I.files}: ${state.filesTouched || 0}`)));
+  rows.push(line(c('dim', ` ${I.keys}`)));
 
   rows.push('╚' + '═'.repeat(W - 2) + '╝');
 
@@ -241,7 +314,7 @@ process.stdin.on('data', (key) => {
     process.stdout.write('\x1b[?25h\x1b[?1049l'); // Restore cursor + screen
     process.stdout.write('\x1b[2J\x1b[H');
     const state = loadState();
-    if (state) console.log(`Goodbye! ${state.name} will keep watching. 💚`);
+    if (state) console.log(I.goodbye(state.name));
     process.exit(0);
   }
 
@@ -249,7 +322,7 @@ process.stdin.on('data', (key) => {
     const state = loadState();
     if (state) {
       const resp = getPetResponse(state);
-      addEvent(c('magenta', `You pet ${state.name}: ${resp}`));
+      addEvent(c('magenta', I.petted(state.name, resp)));
       update();
     }
   }
@@ -264,22 +337,22 @@ process.stdin.on('data', (key) => {
     lastCommitHash = '';
     lastAheadCount = -1;
     resetConfirm = false;
-    addEvent(c('magenta', `Hatched ${state.name} the ${species.label}!${state.shiny ? ' SHINY!' : ''}`));
-    addEvent(c('dim', 'Background story generating...'));
+    addEvent(c('magenta', I.hatched(state.name, species.label) + (state.shiny ? ' SHINY!' : '')));
+    addEvent(c('dim', I.generating));
     update();
   }
 
   if (key === 'x') {
     if (!resetConfirm) {
       resetConfirm = true;
-      addEvent(c('yellow', 'Press [x] again to confirm reset'));
+      addEvent(c('yellow', I.resetConfirm));
       update();
     } else {
       reset();
       resetConfirm = false;
       lastCommitHash = '';
       lastAheadCount = -1;
-      addEvent(c('red', 'Pet reset. Press [h] to hatch a new one.'));
+      addEvent(c('red', I.resetDone));
       update();
     }
   }
@@ -309,11 +382,11 @@ function dataRefresh() {
   lastDataRefresh = Date.now();
   // Detect events
   if (cachedGit?.hash && cachedGit.hash !== lastCommitHash) {
-    if (lastCommitHash) addEvent(c('green', `Commit ${cachedGit.hash} (+15xp)`));
+    if (lastCommitHash) addEvent(c('green', I.commit(cachedGit.hash)));
     lastCommitHash = cachedGit.hash;
   }
   if (cachedGit?.inRepo && lastAheadCount >= 0 && lastAheadCount > 0 && cachedGit.ahead === 0) {
-    addEvent(c('cyan', 'Pushed to remote! (+10xp)'));
+    addEvent(c('cyan', I.pushed));
   }
   if (cachedGit) lastAheadCount = cachedGit.ahead;
 }
@@ -331,9 +404,5 @@ animFrame();
 // Heavy data refresh every 5s
 setInterval(dataRefresh, 5000);
 
-// Light animation frame every 400ms (rainbow color shift)
-setInterval(animFrame, 400);
-
-// Full data refresh every 5s (git, stats, etc.)
-// Already handled by animFrame calling update(), but keep slower
-// git polling separate to avoid excessive execSync calls
+// Light animation frame every 200ms (rainbow color shift)
+setInterval(animFrame, 200);
