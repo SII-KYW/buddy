@@ -19,7 +19,7 @@ import {
   getContextualThought, getXpProgress, getLevelTitle, xpForLevel,
   PERSONALITY_LABELS, getPetResponse, trackSession, trackCommit,
   trackPush, trackFileChanges, trackContextGrowth,
-  getEmoji, applyBuffs, interact, notify, getNotification, checkAchievements,
+  getEmoji, applyBuffs, interact, notify, getNotification, checkAchievements, getQuip,
 } from './pet-engine.mjs';
 import fs from 'fs';
 import path from 'path';
@@ -27,12 +27,8 @@ import os from 'os';
 import { execSync } from 'child_process';
 
 const HOME = os.homedir();
-const W = 54; // Dashboard width
 
-// ═══════════════════════════════════════════════════════════════════
-// i18n
-// ═══════════════════════════════════════════════════════════════════
-
+// Detect language early (needed for border width calculation)
 const LANG_FILE = path.join(HOME, '.claude', 'buddy', 'lang.txt');
 const LANG = (() => {
   try { const s = fs.readFileSync(LANG_FILE, 'utf8').trim(); if (s === 'zh' || s === 'en') return s; } catch {}
@@ -40,26 +36,41 @@ const LANG = (() => {
   return 'en';
 })();
 
+// Box drawing chars are 1 col on macOS terminals regardless of locale
+const W = 64;
+const CONTENT_W = W - 4; // inside "║ " and " ║"
+const DASH_N = W - 2; // number of ═/─ chars
+
+// ═══════════════════════════════════════════════════════════════════
+// i18n
+// ═══════════════════════════════════════════════════════════════════
+// i18n
+// ═══════════════════════════════════════════════════════════════════
+
 const I = LANG === 'zh' ? {
   noPet: '还没有宠物！按 [h] 孵化一只',
   session: '会话', streak: '连续', age: s => `${s}`,
   mood: '心情',
   happiness: '幸福度', hunger: '饥饿度', energy: '精力值', clean: '干净度',
   ctx: '上下文', dirty: '脏文件', noGit: '无git',
-  background: '背景', personality: '性格',
+  background: '背景', personality: '性格', status: '观察', murmur: '碎碎念',
   thought: name => `${name}的内心`,
   watching: '正在关注你的编程活动...',
   commits: '提交', pushes: '推送', files: '文件',
-  keys: '[p]摸摸 [r]刷新 [h]孵化 [x]重置 [q]退出',
+  keys: '[p]摸 [f]喂 [l]玩 [c]洗 [r]刷新 [x]放生 [↑↓]滚动 [q]退出',
   goodbye: name => `再见！${name}会继续守护你 💚`,
   hatched: (name, species) => `孵化了 ${name} (${species})！`,
   generating: '背景故事生成中...',
-  resetConfirm: '再按一次 [x] 确认重置',
-  resetDone: '宠物已重置。按 [h] 孵化新的。',
+  resetConfirm1: '是否确定放生？',
+  resetConfirm2: '真的确定吗？(最后1次)',
+  resetDone: '宠物已放生。按 [h] 孵化新的。',
   petted: (name, resp) => `你摸了 ${name}：${resp}`,
+  fed: name => `你喂了 ${name} 🍖 (+20饥饿度)`,
+  played: name => `你和 ${name} 玩了 ⚽ (+15精力)`,
+  cleaned: name => `你给 ${name} 洗了个澡 🛁 (+20干净度)`,
   commit: hash => `提交 ${hash} (+15xp)`,
   pushed: '已推送到远程！(+10xp)',
-  effects: { 'context-heavy': '📚上下文满', 'overtime': '⏰加班', 'messy-repo': '🧹仓库脏', 'in-flow': '🌟心流' },
+  effects: { 'context-heavy': '📚 上下文满', 'overtime': '⏰ 加班', 'messy-repo': '🧹 仓库脏', 'in-flow': '🌟 心流' },
   moods: { ecstatic: '🤩 激动', happy: '😊 开心', content: '😐 平静', sad: '😞 低落', angry: '😤 焦虑', critical: '😱 崩溃' },
   titles: ['新手','小不点','小型','成长中','活泼','精神','强壮','健壮','威猛','辉煌','闪耀','英勇','传奇','神话','永恒','天界','超凡','全能','神圣','至尊'],
 } : {
@@ -68,20 +79,24 @@ const I = LANG === 'zh' ? {
   mood: 'Mood',
   happiness: 'Happiness', hunger: 'Hunger', energy: 'Energy', clean: 'Clean',
   ctx: 'ctx', dirty: 'dirty', noGit: 'no git',
-  background: 'Background', personality: 'Personality',
+  background: 'Background', personality: 'Personality', status: 'Status', murmur: 'Murmur',
   thought: name => `${name}'s inner world`,
   watching: 'Watching your coding activity...',
   commits: 'Commits', pushes: 'Pushes', files: 'Files',
-  keys: '[p]pet [r]efresh [h]atch [x]reset [q]uit',
+  keys: '[p]pet [f]feed [l]play [c]wash [r]efresh [x]release [↑↓]scroll [q]uit',
   goodbye: name => `Goodbye! ${name} will keep watching. 💚`,
   hatched: (name, species) => `Hatched ${name} the ${species}!`,
   generating: 'Background story generating...',
-  resetConfirm: 'Press [x] again to confirm reset',
-  resetDone: 'Pet reset. Press [h] to hatch a new one.',
+  resetConfirm1: 'Release your pet?',
+  resetConfirm2: 'Really sure? (last chance)',
+  resetDone: 'Pet released. Press [h] to hatch a new one.',
   petted: (name, resp) => `You pet ${name}: ${resp}`,
+  fed: name => `You fed ${name} 🍖 (+20 hunger)`,
+  played: name => `You played with ${name} ⚽ (+15 energy)`,
+  cleaned: name => `You washed ${name} 🛁 (+20 clean)`,
   commit: hash => `Commit ${hash} (+15xp)`,
   pushed: 'Pushed to remote! (+10xp)',
-  effects: { 'context-heavy': '📚ctx-heavy', 'overtime': '⏰overtime', 'messy-repo': '🧹messy', 'in-flow': '🌟in-flow' },
+  effects: { 'context-heavy': '📚 ctx-heavy', 'overtime': '⏰ overtime', 'messy-repo': '🧹 messy', 'in-flow': '🌟 in-flow' },
   moods: { ecstatic: '🤩 ecstatic', happy: '😊 happy', content: '😐 content', sad: '😞 sad', angry: '😤 stressed', critical: '😱 critical' },
   titles: LEVEL_TITLES,
 };
@@ -107,20 +122,21 @@ function termWidth(str) {
   let w = 0;
   for (const ch of str) {
     const cp = ch.codePointAt(0);
-    if (cp <= 0x1F) { w += 0; continue; } // control chars
+    if (cp <= 0x1F) continue;                        // control
     if (cp >= 0x1F300 && cp <= 0x1FAFF) { w += 2; continue; } // emoji
-    if (cp >= 0x2600 && cp <= 0x27BF) { w += 2; continue; } // misc symbols
-    if (cp >= 0x2000 && cp <= 0x206F) { w += 0; continue; } // zero-width
-    if (cp >= 0xFE00 && cp <= 0xFE0F) { w += 0; continue; } // variation selectors
-    if (cp >= 0x300 && cp <= 0x36F) { w += 0; continue; } // combining
+    if (cp === 0x2764) { w += 1; continue; }                // ❤ renders as 1 col on macOS
+    if (cp >= 0x2600 && cp <= 0x27BF) { w += 2; continue; } // symbols
+    if (cp >= 0x200B && cp <= 0x200F) continue;      // zero-width
+    if (cp >= 0x2028 && cp <= 0x202E) continue;
+    if (cp >= 0x2060 && cp <= 0x206F) continue;
+    if (cp >= 0xFE00 && cp <= 0xFE0F) continue;      // variation
+    if (cp >= 0x300 && cp <= 0x36F) continue;         // combining
+    // CJK: 2
     if ((cp >= 0x1100 && cp <= 0x115F) || (cp >= 0x2E80 && cp <= 0xA4CF) ||
         (cp >= 0xAC00 && cp <= 0xD7AF) || (cp >= 0xF900 && cp <= 0xFAFF) ||
         (cp >= 0xFE30 && cp <= 0xFE6F) || (cp >= 0xFF01 && cp <= 0xFF60) ||
-        (cp >= 0x20000 && cp <= 0x2FFFF)) {
-      w += 2; // CJK
-    } else {
-      w += 1;
-    }
+        (cp >= 0x20000 && cp <= 0x2FFFF)) { w += 2; continue; }
+    w += 1;
   }
   return w;
 }
@@ -141,7 +157,7 @@ function statBar(value, width = 16) {
   const pct = Math.max(0, Math.min(100, value));
   const filled = Math.round((pct / 100) * width);
   const color = pct > 50 ? 'green' : pct > 20 ? 'yellow' : 'red';
-  return c(color, '█'.repeat(filled) + '░'.repeat(width - filled));
+  return c(color, '▓'.repeat(filled) + '░'.repeat(width - filled));
 }
 
 function xpBar(current, needed, width = 16) {
@@ -192,13 +208,22 @@ function rainbowText(text, level) {
 
 const eventLog = [];
 const MAX_EVENTS = 5;
+const EVENT_TTL = 30000; // events auto-expire after 30s
+let lastPetTime = 0;
 let cachedThought = '';
 let thoughtTime = 0;
 
 function addEvent(msg) {
-  const ts = new Date().toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' });
-  eventLog.unshift(`[${ts}] ${msg}`);
+  const ts = new Date().toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  eventLog.unshift({ time: Date.now(), text: `[${ts}] ${msg}` });
   if (eventLog.length > MAX_EVENTS) eventLog.pop();
+}
+
+function getEvents() {
+  const now = Date.now();
+  // Remove expired
+  while (eventLog.length && now - eventLog[eventLog.length - 1].time > EVENT_TTL) eventLog.pop();
+  return eventLog.map(e => e.text);
 }
 
 function getThought(state, stats, gitInfo) {
@@ -217,7 +242,7 @@ function getThought(state, stats, gitInfo) {
 function render(state, ctxPct, gitInfo) {
   if (!state) return [I.noPet];
 
-  const stats = computeStats(state, ctxPct, gitInfo);
+  const stats = applyBuffs(computeStats(state, ctxPct, gitInfo), state);
   const mood = getMood(stats);
   const effects = getStatusEffects(stats);
   const art = getArt(state, mood);
@@ -226,14 +251,13 @@ function render(state, ctxPct, gitInfo) {
   const age = formatAge(state.born);
   const sessTime = formatSessionTime(state);
   const thought = getThought(state, stats, gitInfo);
-  const line = (s) => '║ ' + pad(s, W - 2) + ' ║';
+  const line = (s) => '║ ' + pad(s, CONTENT_W) + ' ║';
   const empty = () => line('');
 
   const rows = [];
-  const contentW = W - 4; // usable width inside borders (excluding "║ " and " ║")
 
   // Top border
-  rows.push('╔' + '═'.repeat(W - 2) + '╗');
+  rows.push('╔' + '═'.repeat(DASH_N) + '╗');
 
   // Header
   const shiny = state.shiny ? c('magenta', ' ✨SHINY✨') : '';
@@ -243,11 +267,11 @@ function render(state, ctxPct, gitInfo) {
   rows.push(line(c('dim', ` ${age}  |  ${I.session}: ${sessTime}  |  ${I.streak}: ${state.streak || 1}d`)));
   rows.push(line(c('dim', ` Lv.${level} ${c('yellow', getTitleText(level))}  ${xpBar(xpInfo.current, xpInfo.needed)}  ${xpInfo.current}/${xpInfo.needed} XP`)));
 
-  rows.push('╟' + '─'.repeat(W - 2) + '╢');
+  rows.push('╟' + '─'.repeat(DASH_N) + '╢');
 
   // ASCII art
   for (const a of art) {
-    rows.push(line(center(a.trimEnd(), W - 4)));
+    rows.push(line(center(a.trimEnd(), CONTENT_W)));
   }
 
   rows.push(empty());
@@ -257,7 +281,7 @@ function render(state, ctxPct, gitInfo) {
 
   // Stats — fixed layout: emoji + label(8ch) + bar(16ch) + value(4ch) + hint
   const h = stats.hunger, hp = stats.happiness, e = stats.energy, cl = stats.cleanliness;
-  rows.push(line(` ${c('red','❤')} ${LANG === 'zh' ? '幸福度' : 'Happiness'}  ${statBar(hp)} ${c('bold', String(hp).padStart(3)+'%')}`));
+  rows.push(line(` ${c('red','❤️')}  ${LANG === 'zh' ? '幸福度' : 'Happiness'}  ${statBar(hp)} ${c('bold', String(hp).padStart(3)+'%')}`));
   rows.push(line(` ${c('yellow','🍖')} ${LANG === 'zh' ? '饥饿度' : 'Hunger   '}  ${statBar(h)} ${c('bold', String(h).padStart(3)+'%')}  ${c('dim', `${I.ctx} ${Math.round(ctxPct)}%`)}`));
   rows.push(line(` ${c('blue','⚡')} ${LANG === 'zh' ? '精力值' : 'Energy   '}  ${statBar(e)} ${c('bold', String(e).padStart(3)+'%')}  ${c('dim', sessTime)}`));
   rows.push(line(` ${c('cyan','🛁')} ${LANG === 'zh' ? '干净度' : 'Clean    '}  ${statBar(cl)} ${c('bold', String(cl).padStart(3)+'%')}  ${c('dim', gitInfo?.inRepo ? `${gitInfo.dirty} ${I.dirty}` : I.noGit)}`));
@@ -269,46 +293,69 @@ function render(state, ctxPct, gitInfo) {
 
   rows.push(empty());
 
-  // Background story — "📖 " prefix = 4 cols, "    " continuation = 4 cols
+  // Background story
   if (state.background) {
-    const bgW = W - 2 - 4; // line width minus prefix
+    rows.push(empty());
+    rows.push(line(` 📖 ${c('white', c('bold', I.background))}`));
+    const bgW = CONTENT_W - 4;
     const bgLines = wrapText(state.background, bgW);
-    rows.push(line(c('dim', ` 📖 ${bgLines[0]}`)));
-    for (let i = 1; i < bgLines.length && i < 5; i++) {
-      rows.push(line(c('dim', `    ${bgLines[i]}`)));
+    for (const bl of bgLines) {
+      rows.push(line(c('dim', `    ${bl}`)));
     }
   }
   if (state.personalityDetail) {
-    const pdW = W - 2 - 4;
+    rows.push(empty());
+    rows.push(line(` 🎭 ${c('white', c('bold', I.personality))}`));
+    const pdW = CONTENT_W - 4;
     const pdLines = wrapText(state.personalityDetail, pdW);
-    rows.push(line(c('dim', ` 🎭 ${pdLines[0]}`)));
-    for (let i = 1; i < pdLines.length && i < 4; i++) {
-      rows.push(line(c('dim', `    ${pdLines[i]}`)));
+    for (const pl of pdLines) {
+      rows.push(line(c('dim', `    ${pl}`)));
     }
   }
 
-  // Thought bubble (cached for 60s)
+  // Status observation (cached for 60s)
   rows.push(empty());
-  rows.push(line(c('dim', ` 💭 ${state.name} ${thought}`)));
+  rows.push(line(` 📡 ${c('white', c('bold', I.status))}`));
+  const thoughtW = CONTENT_W - 4;
+  const thoughtLines = wrapText(thought, thoughtW);
+  for (const tl of thoughtLines) {
+    rows.push(line(c('dim', `    ${tl}`)));
+  }
 
-  rows.push('╟' + '─'.repeat(W - 2) + '╢');
+  // Quip (murmur)
+  const quip = getQuip(state, stats, gitInfo);
+  if (quip) {
+    rows.push(empty());
+    rows.push(line(` 💭 ${c('white', c('bold', I.murmur))}`));
+    const nameHL = c('cyan', state.name);
+    const quipText = `${state.name}: ${quip}`;
+    const quipW = CONTENT_W - 4;
+    const quipLines = wrapText(quipText, quipW);
+    rows.push(line(c('dim', `    ${nameHL}${c('dim', ': ' + quipLines[0].substring(state.name.length + 2))}`)));
+    for (let i = 1; i < quipLines.length; i++) {
+      rows.push(line(c('dim', `    ${quipLines[i]}`)));
+    }
+  }
+
+  rows.push('╟' + '─'.repeat(DASH_N) + '╢');
 
   // Event log
-  if (eventLog.length > 0) {
-    for (const ev of eventLog) {
+  const events = getEvents();
+  if (events.length > 0) {
+    for (const ev of events) {
       rows.push(line(c('dim', ` ${ev}`)));
     }
   } else {
     rows.push(line(c('dim', ` ${I.watching}`)));
   }
 
-  rows.push('╟' + '─'.repeat(W - 2) + '╢');
+  rows.push('╟' + '─'.repeat(DASH_N) + '╢');
 
   // Footer
   rows.push(line(c('dim', ` ${I.commits}: ${state.totalCommits || 0}  ${I.pushes}: ${state.totalPushes || 0}  ${I.files}: ${state.filesTouched || 0}`)));
   rows.push(line(c('dim', ` ${I.keys}`)));
 
-  rows.push('╚' + '═'.repeat(W - 2) + '╝');
+  rows.push('╚' + '═'.repeat(DASH_N) + '╝');
 
   return rows;
 }
@@ -320,18 +367,45 @@ function render(state, ctxPct, gitInfo) {
 // Hide cursor, enter alternate screen
 process.stdout.write('\x1b[?25l\x1b[?1049h');
 
+let scrollOffset = 0;
+let lastRows = [];
+const SCROLL_HINT_MS = 1500;
+let scrollHintUntil = 0;
+
 function clearAndDraw(rows) {
-  process.stdout.write('\x1b[H'); // Move to top-left
-  for (const row of rows) {
-    process.stdout.write(row + '\x1b[K\n'); // Clear to end of line
+  lastRows = rows;
+  const total = rows.length;
+  const viewH = process.stdout.rows || 24;
+  const maxOffset = Math.max(0, total - viewH);
+
+  // Clamp scroll offset
+  if (scrollOffset > maxOffset) scrollOffset = maxOffset;
+
+  const start = scrollOffset;
+  const end = Math.min(start + viewH, total);
+  const visible = rows.slice(start, end);
+
+  process.stdout.write('\x1b[H');
+  for (const row of visible) {
+    process.stdout.write(row + '\x1b[K\n');
   }
-  // Clear remaining lines
   process.stdout.write('\x1b[J');
+
+  // Scroll indicator
+  if (total > viewH) {
+    const pct = Math.round(((start + visible.length) / total) * 100);
+    const indicator = c('dim', ` ${start > 0 ? '↑' : ''}${end < total ? '↓' : ''} ${start + 1}-${end}/${total}`);
+    process.stdout.write('\x1b[s'); // Save cursor
+    process.stdout.write('\x1b[' + viewH + ';1H');
+    process.stdout.write(indicator + '\x1b[K');
+    process.stdout.write('\x1b[u'); // Restore cursor
+    scrollHintUntil = Date.now() + SCROLL_HINT_MS;
+  }
 }
 
 let lastCommitHash = '';
 let lastAheadCount = -1;
-let resetConfirm = false;
+let resetConfirm = 0; // 0=none, 1=first warning, 2=second warning, 3=execute
 
 function update() {
   dataRefresh();
@@ -344,6 +418,18 @@ process.stdin.resume();
 process.stdin.setEncoding('utf8');
 
 process.stdin.on('data', (key) => {
+  // Scrolling: arrow keys, j/k, PgUp/PgDn, Home/End
+  const viewH = process.stdout.rows || 24;
+  const maxOffset = Math.max(0, lastRows.length - viewH);
+  let scrolled = false;
+  if (key === '\x1b[A' || key === '\x1bOA' || key === 'k') { scrollOffset = Math.max(0, scrollOffset - 1); scrolled = true; }
+  if (key === '\x1b[B' || key === '\x1bOB' || key === 'j') { scrollOffset = Math.min(maxOffset, scrollOffset + 1); scrolled = true; }
+  if (key === '\x1b[5~') { scrollOffset = Math.max(0, scrollOffset - (viewH - 2)); scrolled = true; } // PgUp
+  if (key === '\x1b[6~') { scrollOffset = Math.min(maxOffset, scrollOffset + (viewH - 2)); scrolled = true; } // PgDn
+  if (key === '\x1b[H' || key === '\x1b[1~') { scrollOffset = 0; scrolled = true; } // Home
+  if (key === '\x1b[F' || key === '\x1b[4~') { scrollOffset = maxOffset; scrolled = true; } // End
+  if (scrolled) { clearAndDraw(lastRows); return; }
+
   if (key === 'q' || key === '\x03') { // q or Ctrl+C
     process.stdout.write('\x1b[?25h\x1b[?1049l'); // Restore cursor + screen
     process.stdout.write('\x1b[2J\x1b[H');
@@ -353,10 +439,58 @@ process.stdin.on('data', (key) => {
   }
 
   if (key === 'p') {
+    const now = Date.now();
+    if (now - lastPetTime < 300) return;
+    lastPetTime = now;
     const state = loadState();
     if (state) {
+      interact(state, 'pet');
+      saveState(state);
+      cachedThought = ''; thoughtTime = 0;
       const resp = getPetResponse(state);
       addEvent(c('magenta', I.petted(state.name, resp)));
+      update();
+    }
+  }
+
+  if (key === 'f') {
+    const now = Date.now();
+    if (now - lastPetTime < 300) return;
+    lastPetTime = now;
+    const state = loadState();
+    if (state) {
+      interact(state, 'feed');
+      saveState(state);
+      cachedThought = ''; thoughtTime = 0;
+      addEvent(c('yellow', I.fed(state.name)));
+      update();
+    }
+  }
+
+  if (key === 'l') {
+    const now = Date.now();
+    if (now - lastPetTime < 300) return;
+    lastPetTime = now;
+    const state = loadState();
+    if (state) {
+      interact(state, 'play');
+      saveState(state);
+      cachedThought = ''; thoughtTime = 0;
+      addEvent(c('blue', I.played(state.name)));
+      update();
+    }
+  }
+
+  if (key === 'c') {
+    const now = Date.now();
+    if (now - lastPetTime < 300) return;
+    lastPetTime = now;
+    const state = loadState();
+    if (state) {
+      interact(state, 'clean');
+      saveState(state);
+      cachedThought = ''; thoughtTime = 0;
+      addEvent(c('cyan', I.cleaned(state.name)));
       update();
     }
   }
@@ -366,29 +500,31 @@ process.stdin.on('data', (key) => {
   }
 
   if (key === 'h') {
+    if (cachedState) return; // already have a pet
     const state = hatch();
     const species = getSpeciesDef(state.species);
     lastCommitHash = '';
     lastAheadCount = -1;
-    resetConfirm = false;
+    resetConfirm = 0;
     addEvent(c('magenta', I.hatched(state.name, species.label) + (state.shiny ? ' SHINY!' : '')));
     addEvent(c('dim', I.generating));
     update();
   }
 
   if (key === 'x') {
-    if (!resetConfirm) {
-      resetConfirm = true;
-      addEvent(c('yellow', I.resetConfirm));
-      update();
+    resetConfirm++;
+    if (resetConfirm === 1) {
+      addEvent(c('yellow', I.resetConfirm1));
+    } else if (resetConfirm === 2) {
+      addEvent(c('red', I.resetConfirm2));
     } else {
       reset();
-      resetConfirm = false;
+      resetConfirm = 0;
       lastCommitHash = '';
       lastAheadCount = -1;
       addEvent(c('red', I.resetDone));
-      update();
     }
+    update();
   }
 });
 
@@ -407,7 +543,31 @@ let cachedCtxPct = 0;
 let lastDataRefresh = 0;
 
 function dataRefresh() {
+  const prevRowCount = lastRows.length;
   cachedState = loadState();
+  // Clean expired buffs & interact log
+  if (cachedState) {
+    const now = Date.now();
+    let dirty = false;
+    if (cachedState.buffs) {
+      for (const key of Object.keys(cachedState.buffs)) {
+        if (now >= cachedState.buffs[key].until) { delete cachedState.buffs[key]; dirty = true; }
+      }
+    }
+    if (cachedState.interactLog) {
+      const cleaned = cachedState.interactLog.filter(e => now - e.time < 10_000);
+      if (cleaned.length !== cachedState.interactLog.length) {
+        cachedState.interactLog = cleaned;
+        dirty = true;
+      }
+    }
+    if (dirty) { saveState(cachedState); cachedThought = ''; thoughtTime = 0; }
+  }
+  // New data → scroll to bottom
+  if (cachedState) {
+    const newRows = render(cachedState, cachedCtxPct, cachedGit);
+    if (newRows.length > prevRowCount && prevRowCount > 0) scrollOffset = 0;
+  }
   cachedGit = getGitInfo();
   if (cachedState) {
     const sessionMin = (Date.now() - (cachedState.lastSessionStart || cachedState.born)) / 60000;
@@ -426,7 +586,6 @@ function dataRefresh() {
 }
 
 function animFrame() {
-  if (!cachedState) return;
   const rows = render(cachedState, cachedCtxPct, cachedGit);
   clearAndDraw(rows);
 }

@@ -8,8 +8,8 @@ const HOME = os.homedir();
 const STATE_FILE = path.join(HOME, '.claude', 'buddy', 'state.json');
 
 const action = process.argv[2];
-if (!['pet', 'feed', 'play'].includes(action)) {
-  console.log('Usage: node interact.mjs <pet|feed|play>');
+if (!['pet', 'feed', 'play', 'clean'].includes(action)) {
+  console.log('Usage: node interact.mjs <pet|feed|play|clean>');
   process.exit(1);
 }
 

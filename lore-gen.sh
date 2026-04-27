@@ -16,6 +16,9 @@ PROMPT=$(cat "$PROMPT_FILE")
 OUTPUT=$(claude -p "$PROMPT" --output-format text --no-session-persistence 2>/dev/null)
 [ -z "$OUTPUT" ] && exit 0
 
+# Skip API error responses
+echo "$OUTPUT" | grep -qiE "error|429|rate.limit|rejected|forbidden" && { rm -f "$LOCK_FILE"; exit 0; }
+
 # Write raw output to temp file for node to parse
 TMPFILE=$(mktemp)
 echo "$OUTPUT" > "$TMPFILE"

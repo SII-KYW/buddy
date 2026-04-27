@@ -95,7 +95,7 @@ const BODIES = {
   ghost:   { lines: ['   .---.   ','FACE',' |  \\_/  | ','  \\=====/  ','   ~~~~~   '], fmt: ' |{F}  | ' },
   robot:   { lines: ['  _[°]_    ','FACE','  | = |    ','  |___|    ','  /| |\\   '], fmt: '  |{F}|    ' },
   alien:   { lines: ['  .-"""-.  ','FACE',' \\  ===  / ','  \'-----\'  ','   "   "   '], fmt: '/ {F}  \\ ' },
-  star:    { lines: ['    *      ','FACE','  *****    ','   ***     ','    *      '], fmt: '   {F}     ' },
+  star:    { lines: [' ▐▛███▜▌ ','FACE',' ▐█████▌ ',' ▝▜███▛▘ ','   ▘ ▝   '], fmt: ' ▐ {F} ▌ ' },
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -109,7 +109,7 @@ const LEVEL_TITLES = [
   'Celestial', 'Transcendent', 'Omnipotent', 'Divine', 'Supreme',
 ];
 
-export function xpForLevel(level) { return level * 25; }
+export function xpForLevel(level) { return Math.round(20 * Math.pow(1.25, level)); }
 
 export function getLevelTitle(level) {
   return LEVEL_TITLES[Math.min(Math.max(level - 1, 0), LEVEL_TITLES.length - 1)];
@@ -513,16 +513,27 @@ function gainXP(state, amount) {
 // ═══════════════════════════════════════════════════════════════════
 
 const ACTIONS = {
-  pet:  { icon: '🐾', xp: 3,  buff: 'happiness', amount: 15, duration: 300_000 },
-  feed: { icon: '🍖', xp: 2,  buff: 'hunger',    amount: 20, duration: 300_000 },
-  play: { icon: '⚽', xp: 2,  buff: 'energy',     amount: 15, duration: 300_000 },
+  pet:   { icon: '🐾', xp: 3,  buff: 'happiness',   amount: 15, duration: 120_000 },
+  feed:  { icon: '🍖', xp: 2,  buff: 'hunger',      amount: 20, duration: 120_000 },
+  play:  { icon: '⚽', xp: 2,  buff: 'energy',      amount: 15, duration: 120_000 },
+  clean: { icon: '🛁', xp: 2,  buff: 'cleanliness', amount: 20, duration: 120_000 },
 };
 
 export function interact(state, action) {
   const def = ACTIONS[action];
   if (!def) return null;
+  // Stat buff (2min)
   state.buffs = state.buffs || {};
-  state.buffs[def.buff] = { amount: def.amount, until: Date.now() + def.duration };
+  const existing = state.buffs[def.buff];
+  state.buffs[def.buff] = {
+    amount: def.amount,
+    until: Date.now() + def.duration,
+    count: (existing?.count || 0) + 1,
+  };
+  // Interaction log for observation (10s window)
+  state.interactLog = state.interactLog || [];
+  state.interactLog.push({ action, buff: def.buff, time: Date.now() });
+  state.interactLog = state.interactLog.filter(e => Date.now() - e.time < 10_000);
   gainXP(state, def.xp);
   return def;
 }
@@ -532,7 +543,7 @@ export function applyBuffs(stats, state) {
   const now = Date.now();
   for (const [key, buff] of Object.entries(state.buffs)) {
     if (now < buff.until && stats[key] !== undefined) {
-      stats[key] = Math.min(100, stats[key] + buff.amount);
+      stats[key] = Math.min(100, stats[key] + buff.amount * Math.min(buff.count, 3));
     }
   }
   // Clean expired
@@ -628,57 +639,95 @@ export function getXpProgress(state) {
 
 // Contextual idle thoughts
 export function getContextualThought(state, stats, gitInfo) {
+  const HOME = os.homedir();
+  let lang = 'en';
+  try { const s = fs.readFileSync(path.join(HOME, '.claude', 'buddy', 'lang.txt'), 'utf8').trim(); if (s === 'zh') lang = 'zh'; } catch {}
+  if (lang !== 'zh') { try { if (Intl.DateTimeFormat().resolvedOptions().locale.startsWith('zh')) lang = 'zh'; } catch {} }
+
+  const zh = lang === 'zh';
   const thoughts = [];
+
+  // Over-interaction detection (active buffs) — highest priority, return immediately
+  const now = Date.now();
+  const log = (state.interactLog || []).filter(e => now - e.time < 10_000);
+  if (log.length > 0) {
+    const totalCount = log.length;
+    const msgs = {
+      happiness:   { ok: '被摸得好舒服，眯起了眼睛', mid: '被摸得很开心，但可以歇歇了', much: '被摸得毛都快秃了！' },
+      hunger:      { ok: '吃饱了，打个嗝～', mid: '有点撑了……消化一下', much: '肚子好撑……别喂了！' },
+      energy:      { ok: '运动完有点累，但很开心！', mid: '跑累了，喘口气', much: '跑不动了……' },
+      cleanliness: { ok: '洗得香香的，神清气爽！', mid: '已经很干净了哦', much: '皮都要搓破了！' },
+    };
+
+    if (totalCount >= 9) {
+      const counts = {};
+      for (const e of log) counts[e.buff] = (counts[e.buff] || 0) + 1;
+      const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+      const m = msgs[top[0]]?.much || '太多了！';
+      return zh ? `被折腾得晕头转向！！${m}` : `completely overwhelmed!! ${m}`;
+    }
+
+    // Per-type independent display
+    const counts = {};
+    for (const e of log) counts[e.buff] = (counts[e.buff] || 0) + 1;
+    const parts = Object.entries(counts).map(([key, cnt]) => {
+      const m = msgs[key] || {};
+      if (cnt >= 7) return m.much || '太多了！';
+      if (cnt >= 4) return m.mid || '有点多了';
+      return m.ok || '很开心～';
+    });
+    return zh ? parts.join('…') : parts.join('. ');
+  }
 
   if (stats.hunger < 20) {
     thoughts.push(
-      'feels heavy... context window is almost full!',
-      'stares at you. Maybe compact the context?',
+      zh ? '觉得好沉重……上下文窗口快满了！' : 'feels heavy... context window is almost full!',
+      zh ? '盯着你看。要不要 compact 一下？' : 'stares at you. Maybe compact the context?',
     );
   }
   if (stats.energy < 20) {
     thoughts.push(
-      'yawns... been coding for a while. Take a break!',
-      'is barely keeping eyes open...',
+      zh ? '打了个哈欠……编码好久了，休息一下吧！' : 'yawns... been coding for a while. Take a break!',
+      zh ? '快撑不住眼皮了……' : 'is barely keeping eyes open...',
     );
   }
   if (stats.cleanliness < 20) {
     const n = gitInfo?.dirty || 0;
     thoughts.push(
-      `glares at ${n} uncommitted files. Commit already!`,
-      'looks at the messy repo and sighs...',
-      'wonders when all these changes will be committed...',
+      zh ? `瞪着 ${n} 个未提交的文件。赶紧 commit！` : `glares at ${n} uncommitted files. Commit already!`,
+      zh ? '看着乱糟糟的仓库叹了口气……' : 'looks at the messy repo and sighs...',
+      zh ? '想知道这些改动什么时候才能提交……' : 'wonders when all these changes will be committed...',
     );
   }
   if (gitInfo?.ahead > 0) {
     thoughts.push(
-      `sees ${gitInfo.ahead} local commit${gitInfo.ahead > 1 ? 's' : ''} waiting to be pushed`,
+      zh ? `看到 ${gitInfo.ahead} 个本地提交还没 push` : `sees ${gitInfo.ahead} local commit${gitInfo.ahead > 1 ? 's' : ''} waiting to be pushed`,
     );
   }
   if (state.filesTouched > 5) {
     thoughts.push(
-      `is impressed! ${state.filesTouched} files touched this session`,
-      `watches the code evolve. ${state.filesTouched} files changed so far!`,
+      zh ? `好厉害！这个会话已经改了 ${state.filesTouched} 个文件` : `is impressed! ${state.filesTouched} files touched this session`,
+      zh ? `看着代码不断演进。已经改了 ${state.filesTouched} 个文件！` : `watches the code evolve. ${state.filesTouched} files changed so far!`,
     );
   }
   if (stats.hunger > 70 && stats.energy > 70 && stats.cleanliness > 70) {
     thoughts.push(
-      'purrs contentedly. Clean codebase, fresh context!',
-      'is in the zone! Everything is flowing~',
-      'vibes with the clean working tree ✨',
+      zh ? '满足地打呼噜。干净的代码库，清爽的上下文！' : 'purrs contentedly. Clean codebase, fresh context!',
+      zh ? '状态满满！一切都很顺畅～' : 'is in the zone! Everything is flowing~',
+      zh ? '享受着干净的工作区 ✨' : 'vibes with the clean working tree ✨',
     );
   }
   if (state.streak >= 3) {
     thoughts.push(
-      `is proud of your ${state.streak}-day coding streak!`,
+      zh ? `为你连续 ${state.streak} 天的编程打卡感到骄傲！` : `is proud of your ${state.streak}-day coding streak!`,
     );
   }
 
   if (thoughts.length === 0) {
     thoughts.push(
-      'watches the code scroll by with interest',
-      'is keeping an eye on things',
-      'nods approvingly at your progress',
+      zh ? '饶有兴趣地看着代码滚动' : 'watches the code scroll by with interest',
+      zh ? '正在密切关注着一切' : 'is keeping an eye on things',
+      zh ? '对你的进步点头赞许' : 'nods approvingly at your progress',
     );
   }
 
